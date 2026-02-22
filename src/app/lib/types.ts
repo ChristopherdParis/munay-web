@@ -7,6 +7,33 @@ export interface RestaurantTable {
   currentOrderId?: string;
 }
 
+export interface TablePosition {
+  tableId: number;
+  floor: number;
+  x: number;
+  y: number;
+}
+
+export interface TableGrid {
+  columns: number;
+  rows: number;
+}
+
+export interface BlockedCell {
+  floor: number;
+  x: number;
+  y: number;
+}
+
+export interface FloorPlan {
+  floors: number;
+  grid: TableGrid;
+  positions: TablePosition[];
+  blocked: BlockedCell[];
+  cellSize: number;
+  zoom: number;
+}
+
 export interface MenuItem {
   id: string;
   name: string;
