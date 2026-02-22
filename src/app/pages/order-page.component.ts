@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { StoreService } from '../lib/store.service';
-import { MenuItem, OrderItem } from '../lib/types';
+import { MenuItem, Order, OrderItem } from '../lib/types';
 import { IconComponent } from '../ui/icon.component';
 import { ToastService } from '../ui/toast.service';
 
@@ -97,6 +97,48 @@ import { ToastService } from '../ui/toast.service';
           </div>
         </div>
         <div class="border-t bg-card p-4">
+          <div *ngIf="openOrders().length !== 0" class="mb-3">
+            <div class="mb-2 flex items-center justify-between text-xs font-semibold text-muted-foreground">
+              <span>Ordenes abiertas</span>
+              <span>{{ openOrders().length }}</span>
+            </div>
+            <div class="space-y-2">
+            <div
+              *ngFor="let order of openOrders()"
+              class="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground"
+            >
+              <div class="flex items-center justify-between">
+                <span>Orden {{ order.id.slice(0, 6) }}</span>
+                <span>{{ orderStatusLabel(order.status) }}</span>
+              </div>
+                <div class="mt-2 space-y-1">
+                  <div *ngFor="let item of order.items" class="flex items-center justify-between">
+                    <span class="text-xs text-muted-foreground">{{ item.menuItem.name }}</span>
+                    <span class="text-xs font-semibold text-card-foreground">x{{ item.quantity }}</span>
+                  </div>
+                </div>
+                <div class="mt-2 flex items-center justify-between text-xs">
+                  <span>Total</span>
+                  <span class="font-semibold text-card-foreground">\${{ order.total.toFixed(2) }}</span>
+                </div>
+                <div class="mt-2 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+                  <button
+                    (click)="cancelOrder(order.id)"
+                    class="flex-1 rounded-lg border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10"
+                  >
+                    Cancelar orden
+                  </button>
+                  <button
+                    *ngIf="!order.paid && order.status !== 'canceled'"
+                    (click)="payOrder(order.id)"
+                    class="flex-1 rounded-lg bg-success px-3 py-2 text-xs font-semibold text-success-foreground hover:opacity-90"
+                  >
+                    Pagar
+                  </button>
+                </div>
+            </div>
+            </div>
+          </div>
           <div class="mb-3 flex justify-between text-lg font-bold">
             <span>Total</span>
             <span>\${{ total().toFixed(2) }}</span>
@@ -118,6 +160,19 @@ export class OrderPageComponent {
   readonly tableNumber = signal(0);
   readonly orderItems = signal<OrderItem[]>([]);
   readonly activeCategory = signal<string | null>(null);
+  readonly currentOrder = computed<Order | null>(() => {
+    const table = this.tableNumber();
+    if (!table) {
+      return null;
+    }
+    const candidates = this.store
+      .orders()
+      .filter(
+        (order) =>
+          order.tableNumber === table && order.status !== 'canceled' && order.status !== 'served',
+      );
+    return candidates[0] ?? null;
+  });
 
   readonly categories = computed(() => {
     const items = this.store.menuItems();
@@ -137,6 +192,19 @@ export class OrderPageComponent {
   readonly total = computed(() =>
     this.orderItems().reduce((sum, item) => sum + item.menuItem.price * item.quantity, 0),
   );
+
+  readonly openOrders = computed(() => {
+    const table = this.tableNumber();
+    if (!table) {
+      return [];
+    }
+    return this.store
+      .orders()
+      .filter(
+        (order) =>
+          order.tableNumber === table && order.status !== 'canceled' && order.status !== 'served',
+      );
+  });
 
   constructor(
     private readonly route: ActivatedRoute,
@@ -187,5 +255,35 @@ export class OrderPageComponent {
     this.store.submitOrder(this.tableNumber(), this.orderItems());
     this.toast.success(`Order sent to kitchen for Table ${this.tableNumber()}`);
     this.router.navigate(['/']);
+  }
+
+  cancelOrder(orderId: string): void {
+    if (!window.confirm('Cancelar esta orden?')) {
+      return;
+    }
+    this.store.cancelOrder(orderId);
+    this.toast.success('Orden cancelada');
+  }
+
+  payOrder(orderId: string): void {
+    this.store.markOrderPaid(orderId);
+    this.toast.success('Orden pagada');
+  }
+
+  orderStatusLabel(status: string): string {
+    switch (status) {
+      case 'pending':
+        return 'Pendiente';
+      case 'preparing':
+        return 'Preparando';
+      case 'ready':
+        return 'Lista';
+      case 'served':
+        return 'Servida';
+      case 'canceled':
+        return 'Cancelada';
+      default:
+        return status;
+    }
   }
 }

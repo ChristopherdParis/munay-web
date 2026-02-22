@@ -5,6 +5,8 @@ import {
   MenuItem,
   Order,
   OrderItem,
+  PaymentStatus,
+  PaymentTiming,
   RestaurantTable,
   TableStatus,
   TablePosition,
@@ -88,9 +90,22 @@ export class StoreService {
               status,
               currentOrderId:
                 status === 'free' || status === 'served' ? undefined : orderId ?? table.currentOrderId,
+              paymentStatus: status === 'free' ? 'unpaid' : table.paymentStatus,
             }
           : table,
       ),
+    );
+  }
+
+  setTablePaymentTiming(tableId: number, timing: PaymentTiming): void {
+    this.tables.update((tables) =>
+      tables.map((table) => (table.id === tableId ? { ...table, paymentTiming: timing } : table)),
+    );
+  }
+
+  setTablePaymentStatus(tableId: number, status: PaymentStatus): void {
+    this.tables.update((tables) =>
+      tables.map((table) => (table.id === tableId ? { ...table, paymentStatus: status } : table)),
     );
   }
 
@@ -103,7 +118,16 @@ export class StoreService {
     const tables = this.tables();
     const nextId = tables.length ? Math.max(...tables.map((table) => table.id)) + 1 : 1;
     const nextNumber = tables.length ? Math.max(...tables.map((table) => table.number)) + 1 : 1;
-    this.tables.set([...tables, { id: nextId, number: nextNumber, status: 'free' }]);
+    this.tables.set([
+      ...tables,
+      {
+        id: nextId,
+        number: nextNumber,
+        status: 'free',
+        paymentStatus: 'unpaid',
+        paymentTiming: 'end',
+      },
+    ]);
   }
 
   deleteTable(tableId: number): void {
@@ -148,6 +172,9 @@ export class StoreService {
 
   submitOrder(tableNumber: number, items: OrderItem[]): void {
     const total = items.reduce((sum, item) => sum + item.menuItem.price * item.quantity, 0);
+    const table = this.tables().find((t) => t.number === tableNumber);
+    const paymentTiming: PaymentTiming = table?.paymentTiming ?? 'end';
+    const paid = paymentTiming === 'start';
     const order: Order = {
       id: crypto.randomUUID(),
       tableNumber,
@@ -155,15 +182,23 @@ export class StoreService {
       status: 'pending',
       createdAt: new Date(),
       total,
+      paymentTiming,
+      paid,
     };
     this.orders.update((orders) => [order, ...orders]);
     this.tables.update((tables) =>
       tables.map((table) =>
         table.number === tableNumber
-          ? { ...table, status: 'ordered', currentOrderId: order.id }
+          ? {
+              ...table,
+              status: 'ordered',
+              currentOrderId: order.id,
+              paymentStatus: paid ? 'paid' : 'unpaid',
+            }
           : table,
       ),
     );
+    this.refreshTablePaymentStatus(tableNumber);
   }
 
   markOrderReady(orderId: string): void {
@@ -200,13 +235,94 @@ export class StoreService {
       orders.map((o) => (o.id === orderId ? { ...o, status: 'canceled' } : o)),
     );
     if (order) {
+      this.refreshTablePaymentStatus(order.tableNumber);
+      this.refreshTableStatus(order.tableNumber);
+    }
+  }
+
+  markOrderPaid(orderId: string): void {
+    const order = this.orders().find((o) => o.id === orderId);
+    if (!order) {
+      return;
+    }
+    this.orders.update((orders) =>
+      orders.map((o) => (o.id === orderId ? { ...o, paid: true } : o)),
+    );
+    this.refreshTablePaymentStatus(order.tableNumber);
+  }
+
+  markOrdersPaidForTable(tableNumber: number): void {
+    this.orders.update((orders) =>
+      orders.map((o) =>
+        o.tableNumber === tableNumber && o.status !== 'canceled' ? { ...o, paid: true } : o,
+      ),
+    );
+    this.refreshTablePaymentStatus(tableNumber);
+  }
+
+  canReleaseTable(tableNumber: number): boolean {
+    return this.orders()
+      .filter((o) => o.tableNumber === tableNumber && o.status !== 'canceled')
+      .every((o) => o.paid);
+  }
+
+  releaseTable(tableId: number): void {
+    this.tables.update((tables) =>
+      tables.map((table) =>
+        table.id === tableId
+          ? {
+              ...table,
+              status: 'free',
+              currentOrderId: undefined,
+              paymentStatus: 'unpaid',
+              paymentTiming: 'end',
+            }
+          : table,
+      ),
+    );
+  }
+
+  private refreshTablePaymentStatus(tableNumber: number): void {
+    const tableOrders = this.orders().filter(
+      (o) => o.tableNumber === tableNumber && o.status !== 'canceled',
+    );
+    const hasUnpaid = tableOrders.some((o) => !o.paid);
+    const nextStatus: PaymentStatus = tableOrders.length === 0 ? 'unpaid' : hasUnpaid ? 'unpaid' : 'paid';
+    this.tables.update((tables) =>
+      tables.map((table) =>
+        table.number === tableNumber
+          ? { ...table, paymentStatus: nextStatus }
+          : table,
+      ),
+    );
+  }
+
+  private refreshTableStatus(tableNumber: number): void {
+    const tableOrders = this.orders().filter(
+      (o) => o.tableNumber === tableNumber && o.status !== 'canceled',
+    );
+    if (tableOrders.some((o) => o.status === 'pending' || o.status === 'preparing' || o.status === 'ready')) {
       this.tables.update((tables) =>
         tables.map((table) =>
-          table.number === order.tableNumber
-            ? { ...table, status: 'free', currentOrderId: undefined }
-            : table,
+          table.number === tableNumber ? { ...table, status: 'ordered' } : table,
         ),
       );
+      return;
     }
+    if (tableOrders.some((o) => o.status === 'served')) {
+      this.tables.update((tables) =>
+        tables.map((table) =>
+          table.number === tableNumber ? { ...table, status: 'served' } : table,
+        ),
+      );
+      return;
+    }
+    this.tables.update((tables) =>
+      tables.map((table) =>
+        table.number === tableNumber && table.status !== 'free'
+          ? { ...table, status: 'seated', currentOrderId: undefined }
+          : table,
+      ),
+    );
   }
 }

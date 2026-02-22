@@ -55,7 +55,7 @@ import { ToastService } from '../ui/toast.service';
                   <span class="font-bold text-kitchen-foreground/70">x{{ item.quantity }}</span>
                 </li>
               </ul>
-              <div class="flex gap-2">
+              <div class="flex flex-col gap-2 sm:flex-row">
                 <button
                   (click)="cancelOrder(order.id, order.tableNumber)"
                   class="touch-target flex-1 rounded-xl border border-kitchen-foreground/20 py-3 text-sm font-medium text-kitchen-foreground/80 transition-all hover:bg-kitchen-foreground/10 active:scale-[0.98]"
@@ -96,7 +96,7 @@ import { ToastService } from '../ui/toast.service';
               <ul class="mb-4 space-y-1 text-sm text-kitchen-foreground/70">
                 <li *ngFor="let item of order.items">{{ item.quantity }}x {{ item.menuItem.name }}</li>
               </ul>
-              <div class="flex gap-2">
+              <div class="flex flex-col gap-2 sm:flex-row">
                 <button
                   (click)="undoReady(order.id)"
                   class="touch-target flex-1 rounded-xl border border-kitchen-foreground/20 py-3 text-sm font-medium text-kitchen-foreground/80 transition-all hover:bg-kitchen-foreground/10 active:scale-[0.98]"

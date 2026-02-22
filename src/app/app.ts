@@ -15,5 +15,6 @@ export class App {
     { to: '/', label: 'Tables', icon: 'layout-grid', exact: true },
     { to: '/kitchen', label: 'Kitchen', icon: 'chef-hat' },
     { to: '/admin', label: 'Menu', icon: 'settings' },
+    { to: '/history', label: 'Historial', icon: 'clipboard-list' },
   ];
 }

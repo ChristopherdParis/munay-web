@@ -2,7 +2,15 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { StoreService } from '../lib/store.service';
-import { FloorPlan, RestaurantTable, TableGrid, TablePosition, TableStatus } from '../lib/types';
+import {
+  FloorPlan,
+  PaymentStatus,
+  PaymentTiming,
+  RestaurantTable,
+  TableGrid,
+  TablePosition,
+  TableStatus,
+} from '../lib/types';
 import { IconComponent, IconName } from '../ui/icon.component';
 import { ToastService } from '../ui/toast.service';
 
@@ -14,6 +22,16 @@ const STATUS_CONFIG: Record<
   seated: { label: 'Sentados', className: 'bg-primary/10 text-primary', icon: 'users' },
   ordered: { label: 'Ordenado', className: 'bg-warning/10 text-warning', icon: 'shopping-bag' },
   served: { label: 'Servido', className: 'bg-success/20 text-success', icon: 'check-circle' },
+};
+
+const PAYMENT_STATUS_CONFIG: Record<PaymentStatus, { label: string; className: string }> = {
+  unpaid: { label: 'Por pagar', className: 'bg-warning/10 text-warning' },
+  paid: { label: 'Pagado', className: 'bg-success/15 text-success' },
+};
+
+const PAYMENT_TIMING_LABEL: Record<PaymentTiming, string> = {
+  start: 'Paga al inicio',
+  end: 'Paga al final',
 };
 
 @Component({
@@ -98,6 +116,90 @@ const STATUS_CONFIG: Record<
                   >
                     {{ statusConfig[entry.table.status].label }}
                   </button>
+                  <div class="mt-2 flex flex-wrap items-center justify-center gap-1 text-[10px]">
+                    <button
+                      type="button"
+                      class="rounded-full px-2 py-0.5 font-medium"
+                      [ngClass]="paymentStatusConfig[entry.table.paymentStatus].className"
+                      (click)="togglePaid(entry.table, $event)"
+                    >
+                      {{ paymentStatusConfig[entry.table.paymentStatus].label }}
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-full border border-border/60 px-2 py-0.5 font-medium text-muted-foreground hover:text-foreground"
+                      (click)="togglePaymentTiming(entry.table, $event)"
+                    >
+                      {{ paymentTimingLabel[entry.table.paymentTiming] }}
+                    </button>
+                  </div>
+                  <div class="mt-2 text-[10px] text-muted-foreground">
+                    Ordenes: {{ orderTotals(entry.table.number).total }} - Pendientes: {{ orderTotals(entry.table.number).unpaid }}
+                  </div>
+                  <div class="mt-2 flex flex-wrap items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      class="rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                      (click)="payAll(entry.table, $event)"
+                    >
+                      Marcar pagadas
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                      [ngClass]="
+                        canRelease(entry.table)
+                          ? 'bg-success/15 text-success'
+                          : 'bg-muted/50 text-muted-foreground'
+                      "
+                      (click)="releaseTable(entry.table, $event)"
+                    >
+                      Liberar mesa
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                      (click)="toggleOrders(entry.table.id, $event)"
+                    >
+                      {{ expandedTableId() === entry.table.id ? 'Ocultar ordenes' : 'Ver ordenes' }}
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                      (click)="goToHistory(entry.table.number, $event)"
+                    >
+                      Historial
+                    </button>
+                  </div>
+                  <div
+                    *ngIf="expandedTableId() === entry.table.id"
+                    class="mt-3 rounded-lg border border-border/60 bg-muted/20 p-2 text-[10px] text-muted-foreground"
+                  >
+                    <div *ngIf="ordersForTable(entry.table.number).length === 0" class="text-center">
+                      Sin ordenes registradas.
+                    </div>
+                    <div *ngFor="let order of ordersForTable(entry.table.number)" class="mb-2 rounded-md border bg-card px-2 py-1">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="font-semibold">Orden {{ order.id.slice(0, 6) }}</span>
+                        <span>{{ orderStatusLabel(order.status) }}</span>
+                      </div>
+                      <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
+                        <span>{{ order.paymentTiming === 'start' ? 'Inicio' : 'Final' }}</span>
+                        <span>{{ order.paid ? 'Pagado' : 'Por pagar' }}</span>
+                      </div>
+                      <div class="mt-1 flex items-center justify-between gap-2">
+                        <span>Total: \${{ order.total.toFixed(2) }}</span>
+                        <button
+                          *ngIf="!order.paid && order.status !== 'canceled'"
+                          type="button"
+                          class="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium text-success"
+                          (click)="payOrder(order.id, $event)"
+                        >
+                          Pagar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               </div>
@@ -365,9 +467,12 @@ const STATUS_CONFIG: Record<
 })
 export class TablesPageComponent {
   readonly statusConfig = STATUS_CONFIG;
+  readonly paymentStatusConfig = PAYMENT_STATUS_CONFIG;
+  readonly paymentTimingLabel = PAYMENT_TIMING_LABEL;
   readonly activeTab = signal<'tables' | 'layout'>('tables');
   readonly activeFloor = signal(1);
   readonly selectedTableId = signal<number | null>(null);
+  readonly expandedTableId = signal<number | null>(null);
   readonly layoutMode = signal<'place' | 'shape'>('place');
   readonly draftPlan = signal<FloorPlan>({
     floors: 1,
@@ -392,6 +497,22 @@ export class TablesPageComponent {
       }
     }
     return entries;
+  });
+
+  readonly ordersByTable = computed(() => {
+    const map = new Map<number, { total: number; unpaid: number }>();
+    for (const order of this.store.orders()) {
+      if (order.status === 'canceled') {
+        continue;
+      }
+      const entry = map.get(order.tableNumber) ?? { total: 0, unpaid: 0 };
+      entry.total += 1;
+      if (!order.paid) {
+        entry.unpaid += 1;
+      }
+      map.set(order.tableNumber, entry);
+    }
+    return map;
   });
 
   readonly unplacedTables = computed(() => {
@@ -428,12 +549,97 @@ export class TablesPageComponent {
     this.router.navigate(['/order', tableNumber]);
   }
 
+  goToHistory(tableNumber: number, event?: Event): void {
+    event?.stopPropagation();
+    this.router.navigate(['/history'], { queryParams: { table: tableNumber } });
+  }
+
   cycleStatus(table: RestaurantTable, event?: Event): void {
     event?.stopPropagation();
     const order: TableStatus[] = ['free', 'seated', 'ordered', 'served'];
     const currentIndex = order.indexOf(table.status);
     const nextStatus = order[(currentIndex + 1) % order.length] ?? 'free';
     this.store.setTableStatus(table.id, nextStatus);
+  }
+
+  togglePaid(table: RestaurantTable, event?: Event): void {
+    event?.stopPropagation();
+    if (table.paymentStatus === 'paid') {
+      this.toast.error('Usa el pago por orden para revertir');
+      return;
+    }
+    this.store.markOrdersPaidForTable(table.number);
+    this.toast.success('Ordenes marcadas como pagadas');
+  }
+
+  togglePaymentTiming(table: RestaurantTable, event?: Event): void {
+    event?.stopPropagation();
+    const next = table.paymentTiming === 'start' ? 'end' : 'start';
+    this.store.setTablePaymentTiming(table.id, next);
+  }
+
+  toggleOrders(tableId: number, event?: Event): void {
+    event?.stopPropagation();
+    this.expandedTableId.set(this.expandedTableId() === tableId ? null : tableId);
+  }
+
+  ordersForTable(tableNumber: number) {
+    return this.store.orders().filter((order) => order.tableNumber === tableNumber);
+  }
+
+  payOrder(orderId: string, event?: Event): void {
+    event?.stopPropagation();
+    this.store.markOrderPaid(orderId);
+    this.toast.success('Orden pagada');
+  }
+
+  orderStatusLabel(status: string): string {
+    switch (status) {
+      case 'pending':
+        return 'Pendiente';
+      case 'preparing':
+        return 'Preparando';
+      case 'ready':
+        return 'Lista';
+      case 'served':
+        return 'Servida';
+      case 'canceled':
+        return 'Cancelada';
+      default:
+        return status;
+    }
+  }
+
+  orderTotals(tableNumber: number): { total: number; unpaid: number } {
+    return this.ordersByTable().get(tableNumber) ?? { total: 0, unpaid: 0 };
+  }
+
+  payAll(table: RestaurantTable, event?: Event): void {
+    event?.stopPropagation();
+    const totals = this.orderTotals(table.number);
+    if (totals.total === 0 || totals.unpaid === 0) {
+      this.toast.error('No hay ordenes pendientes por pagar');
+      return;
+    }
+    this.store.markOrdersPaidForTable(table.number);
+    this.toast.success('Ordenes marcadas como pagadas');
+  }
+
+  canRelease(table: RestaurantTable): boolean {
+    return table.status !== 'free' && this.store.canReleaseTable(table.number);
+  }
+
+  releaseTable(table: RestaurantTable, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.store.canReleaseTable(table.number)) {
+      this.toast.error('Hay ordenes pendientes de pago');
+      return;
+    }
+    if (!window.confirm('Liberar esta mesa?')) {
+      return;
+    }
+    this.store.releaseTable(table.id);
+    this.toast.success('Mesa liberada');
   }
 
   setTab(tab: 'tables' | 'layout'): void {
@@ -758,7 +964,7 @@ export class TablesPageComponent {
     if (!pos) {
       return 'Sin ubicar';
     }
-    return `Piso ${pos.floor} · (${pos.x + 1}, ${pos.y + 1})`;
+    return `Piso ${pos.floor} - (${pos.x + 1}, ${pos.y + 1})`;
   }
 }
 
@@ -807,3 +1013,4 @@ const sanitizePlan = (plan: FloorPlan): FloorPlan => {
     zoom,
   };
 };
+

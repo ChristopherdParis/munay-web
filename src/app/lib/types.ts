@@ -1,9 +1,13 @@
 export type TableStatus = 'free' | 'seated' | 'ordered' | 'served';
+export type PaymentStatus = 'unpaid' | 'paid';
+export type PaymentTiming = 'start' | 'end';
 
 export interface RestaurantTable {
   id: number;
   number: number;
   status: TableStatus;
+  paymentStatus: PaymentStatus;
+  paymentTiming: PaymentTiming;
   currentOrderId?: string;
 }
 
@@ -55,4 +59,6 @@ export interface Order {
   status: OrderStatus;
   createdAt: Date;
   total: number;
+  paymentTiming: PaymentTiming;
+  paid: boolean;
 }
