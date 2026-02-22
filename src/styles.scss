@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@layer base {
+  :root {
+    --background: 30 25% 97%;
+    --foreground: 20 20% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 20 20% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 20% 12%;
+
+    --primary: 28 80% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 30 15% 92%;
+    --secondary-foreground: 20 20% 20%;
+
+    --muted: 30 10% 94%;
+    --muted-foreground: 20 10% 50%;
+
+    --accent: 28 80% 52%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 15% 88%;
+    --input: 30 15% 88%;
+    --ring: 28 80% 52%;
+
+    --radius: 0.75rem;
+
+    --success: 142 60% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --kitchen-bg: 220 15% 10%;
+    --kitchen-foreground: 210 20% 95%;
+    --kitchen-card: 220 12% 16%;
+    --kitchen-card-foreground: 210 20% 95%;
+    --kitchen-accent: 28 80% 55%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 220 15% 10%;
+    --foreground: 210 20% 95%;
+    --card: 220 12% 16%;
+    --card-foreground: 210 20% 95%;
+    --popover: 220 12% 16%;
+    --popover-foreground: 210 20% 95%;
+    --primary: 28 80% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 10% 20%;
+    --secondary-foreground: 210 20% 90%;
+    --muted: 220 10% 20%;
+    --muted-foreground: 215 15% 60%;
+    --accent: 28 80% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 10% 22%;
+    --input: 220 10% 22%;
+    --ring: 28 80% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+}

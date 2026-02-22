@@ -1,0 +1,32 @@
+<div class="flex min-h-screen flex-col">
+  <header class="sticky top-0 z-50 border-b bg-card px-4 py-3">
+    <div class="container flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <app-icon class="h-6 w-6 text-primary" name="clipboard-list"></app-icon>
+        <span class="text-lg font-bold text-foreground">OrderFlow</span>
+      </div>
+      <nav class="flex gap-1">
+        <a
+          *ngFor="let item of navItems"
+          [routerLink]="item.to"
+          routerLinkActive="active"
+          #rla="routerLinkActive"
+          [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
+          class="touch-target flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+          [ngClass]="
+            rla.isActive
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+          "
+        >
+          <app-icon class="h-4 w-4" [name]="item.icon"></app-icon>
+          <span class="hidden sm:inline">{{ item.label }}</span>
+        </a>
+      </nav>
+    </div>
+  </header>
+  <main class="flex-1">
+    <router-outlet></router-outlet>
+  </main>
+  <app-toaster></app-toaster>
+</div>
