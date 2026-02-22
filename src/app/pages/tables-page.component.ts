@@ -10,9 +10,10 @@ const STATUS_CONFIG: Record<
   TableStatus,
   { label: string; className: string; icon: IconName }
 > = {
-  free: { label: 'Free', className: 'bg-success/10 text-success', icon: 'coffee' },
-  ordering: { label: 'Ordering', className: 'bg-warning/10 text-warning', icon: 'shopping-bag' },
-  occupied: { label: 'Occupied', className: 'bg-primary/10 text-primary', icon: 'users' },
+  free: { label: 'Libre', className: 'bg-success/10 text-success', icon: 'coffee' },
+  seated: { label: 'Sentados', className: 'bg-primary/10 text-primary', icon: 'users' },
+  ordered: { label: 'Ordenado', className: 'bg-warning/10 text-warning', icon: 'shopping-bag' },
+  served: { label: 'Servido', className: 'bg-success/20 text-success', icon: 'check-circle' },
 };
 
 @Component({
@@ -75,28 +76,30 @@ const STATUS_CONFIG: Record<
                     : 'bg-muted/50'
                 "
               ></div>
-                <button
-                  *ngFor="let entry of tablesForActiveFloor()"
-                  (click)="goToOrder(entry.table.number)"
-                  class="touch-target group flex flex-col items-center gap-2 rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md hover:border-primary/30 active:scale-[0.97]"
-                  [ngStyle]="tableStyle(entry.position)"
+              <div
+                *ngFor="let entry of tablesForActiveFloor()"
+                (click)="goToOrder(entry.table.number)"
+                class="touch-target group flex cursor-pointer flex-col items-center gap-2 rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md hover:border-primary/30 active:scale-[0.97]"
+                [ngStyle]="tableStyle(entry.position)"
+              >
+                <div
+                  class="flex h-10 w-10 items-center justify-center rounded-full"
+                  [ngClass]="statusConfig[entry.table.status].className"
                 >
-                  <div
-                    class="flex h-10 w-10 items-center justify-center rounded-full"
+                  <app-icon class="h-4 w-4" [name]="statusConfig[entry.table.status].icon"></app-icon>
+                </div>
+                <div class="text-center">
+                  <div class="text-sm font-bold text-card-foreground">Table {{ entry.table.number }}</div>
+                  <button
+                    type="button"
+                    class="mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
                     [ngClass]="statusConfig[entry.table.status].className"
+                    (click)="cycleStatus(entry.table, $event)"
                   >
-                    <app-icon class="h-4 w-4" [name]="statusConfig[entry.table.status].icon"></app-icon>
-                  </div>
-                  <div class="text-center">
-                    <div class="text-sm font-bold text-card-foreground">Table {{ entry.table.number }}</div>
-                    <span
-                      class="mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
-                      [ngClass]="statusConfig[entry.table.status].className"
-                    >
-                      {{ statusConfig[entry.table.status].label }}
-                    </span>
-                  </div>
-                </button>
+                    {{ statusConfig[entry.table.status].label }}
+                  </button>
+                </div>
+              </div>
               </div>
             </div>
           </div>
@@ -423,6 +426,14 @@ export class TablesPageComponent {
 
   goToOrder(tableNumber: number): void {
     this.router.navigate(['/order', tableNumber]);
+  }
+
+  cycleStatus(table: RestaurantTable, event?: Event): void {
+    event?.stopPropagation();
+    const order: TableStatus[] = ['free', 'seated', 'ordered', 'served'];
+    const currentIndex = order.indexOf(table.status);
+    const nextStatus = order[(currentIndex + 1) % order.length] ?? 'free';
+    this.store.setTableStatus(table.id, nextStatus);
   }
 
   setTab(tab: 'tables' | 'layout'): void {

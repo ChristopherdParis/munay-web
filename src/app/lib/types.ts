@@ -1,4 +1,4 @@
-export type TableStatus = 'free' | 'ordering' | 'occupied';
+export type TableStatus = 'free' | 'seated' | 'ordered' | 'served';
 
 export interface RestaurantTable {
   id: number;
@@ -46,7 +46,7 @@ export interface OrderItem {
   quantity: number;
 }
 
-export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'served';
+export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'served' | 'canceled';
 
 export interface Order {
   id: string;

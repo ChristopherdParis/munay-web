@@ -82,7 +82,14 @@ export class StoreService {
   setTableStatus(tableId: number, status: TableStatus, orderId?: string): void {
     this.tables.update((tables) =>
       tables.map((table) =>
-        table.id === tableId ? { ...table, status, currentOrderId: orderId } : table,
+        table.id === tableId
+          ? {
+              ...table,
+              status,
+              currentOrderId:
+                status === 'free' || status === 'served' ? undefined : orderId ?? table.currentOrderId,
+            }
+          : table,
       ),
     );
   }
@@ -153,7 +160,7 @@ export class StoreService {
     this.tables.update((tables) =>
       tables.map((table) =>
         table.number === tableNumber
-          ? { ...table, status: 'occupied', currentOrderId: order.id }
+          ? { ...table, status: 'ordered', currentOrderId: order.id }
           : table,
       ),
     );
@@ -165,10 +172,32 @@ export class StoreService {
     );
   }
 
+  markOrderPending(orderId: string): void {
+    this.orders.update((orders) =>
+      orders.map((order) => (order.id === orderId ? { ...order, status: 'pending' } : order)),
+    );
+  }
+
   markOrderServed(orderId: string): void {
     const order = this.orders().find((o) => o.id === orderId);
     this.orders.update((orders) =>
       orders.map((o) => (o.id === orderId ? { ...o, status: 'served' } : o)),
+    );
+    if (order) {
+      this.tables.update((tables) =>
+        tables.map((table) =>
+          table.number === order.tableNumber
+            ? { ...table, status: 'served', currentOrderId: undefined }
+            : table,
+        ),
+      );
+    }
+  }
+
+  cancelOrder(orderId: string): void {
+    const order = this.orders().find((o) => o.id === orderId);
+    this.orders.update((orders) =>
+      orders.map((o) => (o.id === orderId ? { ...o, status: 'canceled' } : o)),
     );
     if (order) {
       this.tables.update((tables) =>
