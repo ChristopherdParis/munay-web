@@ -569,6 +569,10 @@ export class TablesPageComponent {
   }
 
   saveDraft(): void {
+    if (this.store.tables().length === 0 || this.draftPlan().positions.length === 0) {
+      this.toast.error('Configura al menos 1 mesa antes de guardar');
+      return;
+    }
     this.store.setFloorPlan(sanitizePlan(this.draftPlan()));
     const maxFloor = Math.max(1, this.draftPlan().floors);
     if (this.activeFloor() > maxFloor) {
