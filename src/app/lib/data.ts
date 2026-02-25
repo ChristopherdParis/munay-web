@@ -18,7 +18,7 @@ export const defaultMenuItems: MenuItem[] = [
 ];
 
 export const defaultTables: RestaurantTable[] = Array.from({ length: 12 }, (_, i) => ({
-  id: i + 1,
+  id: `table-${i + 1}`,
   number: i + 1,
   status: 'free',
   paymentStatus: 'unpaid',

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, signal } from '@angular/core';
+import { Component, computed, effect, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { StoreService } from '../lib/store.service';
 import {
@@ -190,7 +190,7 @@ const PAYMENT_TIMING_LABEL: Record<PaymentTiming, string> = {
                       <div class="mt-1 flex items-center justify-between gap-2">
                         <span>Total: \${{ order.total.toFixed(2) }}</span>
                         <button
-                          *ngIf="!order.paid && order.status !== 'canceled'"
+                        *ngIf="!order.paid && order.status !== 'cancelled'"
                           type="button"
                           class="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium text-success"
                           (click)="payOrder(order.id, $event)"
@@ -471,8 +471,8 @@ export class TablesPageComponent {
   readonly paymentTimingLabel = PAYMENT_TIMING_LABEL;
   readonly activeTab = signal<'tables' | 'layout'>('tables');
   readonly activeFloor = signal(1);
-  readonly selectedTableId = signal<number | null>(null);
-  readonly expandedTableId = signal<number | null>(null);
+  readonly selectedTableId = signal<string | null>(null);
+  readonly expandedTableId = signal<string | null>(null);
   readonly layoutMode = signal<'place' | 'shape'>('place');
   readonly draftPlan = signal<FloorPlan>({
     floors: 1,
@@ -502,7 +502,7 @@ export class TablesPageComponent {
   readonly ordersByTable = computed(() => {
     const map = new Map<number, { total: number; unpaid: number }>();
     for (const order of this.store.orders()) {
-      if (order.status === 'canceled') {
+      if (order.status === 'cancelled') {
         continue;
       }
       const entry = map.get(order.tableNumber) ?? { total: 0, unpaid: 0 };
@@ -543,6 +543,12 @@ export class TablesPageComponent {
     private readonly toast: ToastService,
   ) {
     this.draftPlan.set(clonePlan(this.store.floorPlan()));
+    effect(() => {
+      const plan = this.store.floorPlan();
+      if (this.activeTab() === 'tables') {
+        this.draftPlan.set(clonePlan(plan));
+      }
+    });
   }
 
   goToOrder(tableNumber: number): void {
@@ -554,31 +560,43 @@ export class TablesPageComponent {
     this.router.navigate(['/history'], { queryParams: { table: tableNumber } });
   }
 
-  cycleStatus(table: RestaurantTable, event?: Event): void {
+  async cycleStatus(table: RestaurantTable, event?: Event): Promise<void> {
     event?.stopPropagation();
     const order: TableStatus[] = ['free', 'seated', 'ordered', 'served'];
     const currentIndex = order.indexOf(table.status);
     const nextStatus = order[(currentIndex + 1) % order.length] ?? 'free';
-    this.store.setTableStatus(table.id, nextStatus);
+    try {
+      await this.store.setTableStatus(table.id, nextStatus);
+    } catch {
+      this.toast.error('No se pudo actualizar la mesa');
+    }
   }
 
-  togglePaid(table: RestaurantTable, event?: Event): void {
+  async togglePaid(table: RestaurantTable, event?: Event): Promise<void> {
     event?.stopPropagation();
     if (table.paymentStatus === 'paid') {
       this.toast.error('Usa el pago por orden para revertir');
       return;
     }
-    this.store.markOrdersPaidForTable(table.number);
-    this.toast.success('Ordenes marcadas como pagadas');
+    try {
+      await this.store.markOrdersPaidForTable(table.number);
+      this.toast.success('Ordenes marcadas como pagadas');
+    } catch {
+      this.toast.error('No se pudieron marcar las ordenes');
+    }
   }
 
-  togglePaymentTiming(table: RestaurantTable, event?: Event): void {
+  async togglePaymentTiming(table: RestaurantTable, event?: Event): Promise<void> {
     event?.stopPropagation();
     const next = table.paymentTiming === 'start' ? 'end' : 'start';
-    this.store.setTablePaymentTiming(table.id, next);
+    try {
+      await this.store.setTablePaymentTiming(table.id, next);
+    } catch {
+      this.toast.error('No se pudo actualizar el pago');
+    }
   }
 
-  toggleOrders(tableId: number, event?: Event): void {
+  toggleOrders(tableId: string, event?: Event): void {
     event?.stopPropagation();
     this.expandedTableId.set(this.expandedTableId() === tableId ? null : tableId);
   }
@@ -587,23 +605,29 @@ export class TablesPageComponent {
     return this.store.orders().filter((order) => order.tableNumber === tableNumber);
   }
 
-  payOrder(orderId: string, event?: Event): void {
+  async payOrder(orderId: string, event?: Event): Promise<void> {
     event?.stopPropagation();
-    this.store.markOrderPaid(orderId);
-    this.toast.success('Orden pagada');
+    try {
+      await this.store.markOrderPaid(orderId);
+      this.toast.success('Orden pagada');
+    } catch {
+      this.toast.error('No se pudo marcar como pagada');
+    }
   }
 
   orderStatusLabel(status: string): string {
     switch (status) {
       case 'pending':
         return 'Pendiente';
+      case 'accepted':
+        return 'Aceptada';
       case 'preparing':
         return 'Preparando';
       case 'ready':
         return 'Lista';
-      case 'served':
-        return 'Servida';
-      case 'canceled':
+      case 'delivered':
+        return 'Entregada';
+      case 'cancelled':
         return 'Cancelada';
       default:
         return status;
@@ -614,22 +638,26 @@ export class TablesPageComponent {
     return this.ordersByTable().get(tableNumber) ?? { total: 0, unpaid: 0 };
   }
 
-  payAll(table: RestaurantTable, event?: Event): void {
+  async payAll(table: RestaurantTable, event?: Event): Promise<void> {
     event?.stopPropagation();
     const totals = this.orderTotals(table.number);
     if (totals.total === 0 || totals.unpaid === 0) {
       this.toast.error('No hay ordenes pendientes por pagar');
       return;
     }
-    this.store.markOrdersPaidForTable(table.number);
-    this.toast.success('Ordenes marcadas como pagadas');
+    try {
+      await this.store.markOrdersPaidForTable(table.number);
+      this.toast.success('Ordenes marcadas como pagadas');
+    } catch {
+      this.toast.error('No se pudieron marcar las ordenes');
+    }
   }
 
   canRelease(table: RestaurantTable): boolean {
     return table.status !== 'free' && this.store.canReleaseTable(table.number);
   }
 
-  releaseTable(table: RestaurantTable, event?: Event): void {
+  async releaseTable(table: RestaurantTable, event?: Event): Promise<void> {
     event?.stopPropagation();
     if (!this.store.canReleaseTable(table.number)) {
       this.toast.error('Hay ordenes pendientes de pago');
@@ -638,8 +666,12 @@ export class TablesPageComponent {
     if (!window.confirm('Liberar esta mesa?')) {
       return;
     }
-    this.store.releaseTable(table.id);
-    this.toast.success('Mesa liberada');
+    try {
+      await this.store.releaseTable(table.id);
+      this.toast.success('Mesa liberada');
+    } catch {
+      this.toast.error('No se pudo liberar la mesa');
+    }
   }
 
   setTab(tab: 'tables' | 'layout'): void {
@@ -785,20 +817,24 @@ export class TablesPageComponent {
     this.layoutMode.set('place');
   }
 
-  saveDraft(): void {
+  async saveDraft(): Promise<void> {
     if (this.store.tables().length === 0 || this.draftPlan().positions.length === 0) {
       this.toast.error('Configura al menos 1 mesa antes de guardar');
       return;
     }
-    this.store.setFloorPlan(sanitizePlan(this.draftPlan()));
-    const maxFloor = Math.max(1, this.draftPlan().floors);
-    if (this.activeFloor() > maxFloor) {
-      this.activeFloor.set(maxFloor);
+    try {
+      await this.store.setFloorPlan(sanitizePlan(this.draftPlan()));
+      const maxFloor = Math.max(1, this.draftPlan().floors);
+      if (this.activeFloor() > maxFloor) {
+        this.activeFloor.set(maxFloor);
+      }
+      this.toast.success('Croquis guardado');
+    } catch {
+      this.toast.error('No se pudo guardar el croquis');
     }
-    this.toast.success('Croquis guardado');
   }
 
-  selectTable(tableId: number): void {
+  selectTable(tableId: string): void {
     this.selectedTableId.set(tableId);
     this.layoutMode.set('place');
   }
@@ -843,8 +879,8 @@ export class TablesPageComponent {
     }
   }
 
-  handleTableDragStart(event: DragEvent, tableId: number): void {
-    event.dataTransfer?.setData('text/plain', tableId.toString());
+  handleTableDragStart(event: DragEvent, tableId: string): void {
+    event.dataTransfer?.setData('text/plain', tableId);
     this.selectedTableId.set(tableId);
     this.layoutMode.set('place');
   }
@@ -865,34 +901,40 @@ export class TablesPageComponent {
     }
     event.preventDefault();
     const data = event.dataTransfer?.getData('text/plain');
-    const tableId = data ? Number(data) : Number.NaN;
-    if (Number.isNaN(tableId)) {
+    const tableId = data?.trim();
+    if (!tableId) {
       return;
     }
     this.placeTableAt(tableId, x, y);
   }
 
-  addTable(): void {
-    this.store.addTable();
-    const tables = this.store.tables();
-    const newest = tables[tables.length - 1];
-    if (newest) {
-      this.selectedTableId.set(newest.id);
+  async addTable(): Promise<void> {
+    try {
+      const created = await this.store.addTable();
+      if (created) {
+        this.selectedTableId.set(created.id);
+      }
+      this.toast.success('Mesa agregada');
+    } catch {
+      this.toast.error('No se pudo agregar la mesa');
     }
-    this.toast.success('Mesa agregada');
   }
 
-  removeTable(tableId: number): void {
-    this.store.deleteTable(tableId);
-    const plan = this.draftPlan();
-    this.draftPlan.set({
-      ...plan,
-      positions: plan.positions.filter((position) => position.tableId !== tableId),
-    });
-    if (this.selectedTableId() === tableId) {
-      this.selectedTableId.set(null);
+  async removeTable(tableId: string): Promise<void> {
+    try {
+      await this.store.deleteTable(tableId);
+      const plan = this.draftPlan();
+      this.draftPlan.set({
+        ...plan,
+        positions: plan.positions.filter((position) => position.tableId !== tableId),
+      });
+      if (this.selectedTableId() === tableId) {
+        this.selectedTableId.set(null);
+      }
+      this.toast.success('Mesa eliminada');
+    } catch {
+      this.toast.error('No se pudo eliminar la mesa');
     }
-    this.toast.success('Mesa eliminada');
   }
 
   toggleBlockedCell(x: number, y: number): void {
@@ -905,7 +947,7 @@ export class TablesPageComponent {
     this.draftPlan.set(sanitizePlan({ ...plan, blocked: nextBlocked }));
   }
 
-  placeTableAt(tableId: number, x: number, y: number): void {
+  placeTableAt(tableId: string, x: number, y: number): void {
     const plan = this.draftPlan();
     const floor = this.activeFloor();
     if (!this.store.tables().some((table) => table.id === tableId)) {
@@ -928,7 +970,7 @@ export class TablesPageComponent {
     this.draftPlan.set({ ...plan, positions: [...withoutExisting, next] });
   }
 
-  handleTableNumberChange(event: Event, tableId: number): void {
+  async handleTableNumberChange(event: Event, tableId: string): Promise<void> {
     const input = event.target as HTMLInputElement | null;
     const raw = input ? Number(input.value) : Number.NaN;
     if (Number.isNaN(raw) || raw <= 0) {
@@ -944,10 +986,15 @@ export class TablesPageComponent {
       return;
     }
 
-    this.store.updateTableNumber(tableId, raw);
+    try {
+      await this.store.updateTableNumber(tableId, raw);
+    } catch {
+      this.toast.error('No se pudo actualizar la mesa');
+      this.resetTableNumberInput(tableId, input);
+    }
   }
 
-  private resetTableNumberInput(tableId: number, input: HTMLInputElement | null): void {
+  private resetTableNumberInput(tableId: string, input: HTMLInputElement | null): void {
     const table = this.store.tables().find((item) => item.id === tableId);
     if (table && input) {
       input.value = table.number.toString();
@@ -959,7 +1006,7 @@ export class TablesPageComponent {
     target?.blur();
   }
 
-  draftPositionLabel(tableId: number): string {
+  draftPositionLabel(tableId: string): string {
     const pos = this.draftPlan().positions.find((position) => position.tableId === tableId);
     if (!pos) {
       return 'Sin ubicar';

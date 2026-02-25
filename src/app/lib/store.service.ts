@@ -1,5 +1,5 @@
-import { Injectable, signal } from '@angular/core';
-import { defaultMenuItems, defaultTables } from './data';
+import { Injectable, computed, effect, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import {
   FloorPlan,
   MenuItem,
@@ -8,11 +8,16 @@ import {
   PaymentStatus,
   PaymentTiming,
   RestaurantTable,
-  TableStatus,
   TablePosition,
+  TableStatus,
 } from './types';
+import { MenuItemsService } from './menu-items.service';
+import { OrdersService } from './orders.service';
+import { TablesService } from './tables.service';
+import { FloorPlanService } from './floor-plan.service';
+import { TenantService } from './tenant.service';
+import { RealtimeService } from './realtime.service';
 
-const FLOOR_PLAN_STORAGE_KEY = 'orderflow.floorPlan';
 const DEFAULT_GRID = { columns: 6, rows: 4 };
 const DEFAULT_CELL_SIZE = 72;
 const DEFAULT_ZOOM = 1;
@@ -35,294 +40,344 @@ const createDefaultFloorPlan = (tables: RestaurantTable[]): FloorPlan => {
   };
 };
 
-const loadFloorPlan = (tables: RestaurantTable[]): FloorPlan => {
-  if (typeof window === 'undefined') {
-    return createDefaultFloorPlan(tables);
-  }
-
-  const raw = window.localStorage.getItem(FLOOR_PLAN_STORAGE_KEY);
-  if (!raw) {
-    return createDefaultFloorPlan(tables);
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as FloorPlan;
-    if (
-      !parsed ||
-      !parsed.grid ||
-      !Array.isArray(parsed.positions) ||
-      typeof parsed.floors !== 'number'
-    ) {
-      return createDefaultFloorPlan(tables);
-    }
-    return {
-      ...parsed,
-      blocked: Array.isArray(parsed.blocked) ? parsed.blocked : [],
-      cellSize:
-        typeof parsed.cellSize === 'number' ? parsed.cellSize : DEFAULT_CELL_SIZE,
-      zoom: typeof parsed.zoom === 'number' ? parsed.zoom : DEFAULT_ZOOM,
-    };
-  } catch {
-    return createDefaultFloorPlan(tables);
-  }
-};
-
-const persistFloorPlan = (plan: FloorPlan): void => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  window.localStorage.setItem(FLOOR_PLAN_STORAGE_KEY, JSON.stringify(plan));
-};
-
 @Injectable({ providedIn: 'root' })
 export class StoreService {
-  readonly tables = signal<RestaurantTable[]>(defaultTables);
-  readonly menuItems = signal<MenuItem[]>(defaultMenuItems);
+  readonly tables = signal<RestaurantTable[]>([]);
+  readonly menuItems = signal<MenuItem[]>([]);
   readonly orders = signal<Order[]>([]);
-  readonly floorPlan = signal<FloorPlan>(loadFloorPlan(defaultTables));
+  readonly floorPlan = signal<FloorPlan>(createDefaultFloorPlan([]));
+  readonly activeRestaurantId = computed(() => this.tenant.activeRestaurantId());
 
-  setTableStatus(tableId: number, status: TableStatus, orderId?: string): void {
-    this.tables.update((tables) =>
-      tables.map((table) =>
-        table.id === tableId
-          ? {
-              ...table,
-              status,
-              currentOrderId:
-                status === 'free' || status === 'served' ? undefined : orderId ?? table.currentOrderId,
-              paymentStatus: status === 'free' ? 'unpaid' : table.paymentStatus,
-            }
-          : table,
-      ),
-    );
-  }
-
-  setTablePaymentTiming(tableId: number, timing: PaymentTiming): void {
-    this.tables.update((tables) =>
-      tables.map((table) => (table.id === tableId ? { ...table, paymentTiming: timing } : table)),
-    );
-  }
-
-  setTablePaymentStatus(tableId: number, status: PaymentStatus): void {
-    this.tables.update((tables) =>
-      tables.map((table) => (table.id === tableId ? { ...table, paymentStatus: status } : table)),
-    );
-  }
-
-  setFloorPlan(plan: FloorPlan): void {
-    this.floorPlan.set(plan);
-    persistFloorPlan(plan);
-  }
-
-  addTable(): void {
-    const tables = this.tables();
-    const nextId = tables.length ? Math.max(...tables.map((table) => table.id)) + 1 : 1;
-    const nextNumber = tables.length ? Math.max(...tables.map((table) => table.number)) + 1 : 1;
-    this.tables.set([
-      ...tables,
-      {
-        id: nextId,
-        number: nextNumber,
-        status: 'free',
-        paymentStatus: 'unpaid',
-        paymentTiming: 'end',
-      },
-    ]);
-  }
-
-  deleteTable(tableId: number): void {
-    this.tables.update((tables) => tables.filter((table) => table.id !== tableId));
-    this.floorPlan.update((plan) => {
-      const nextPlan = {
-        ...plan,
-        positions: plan.positions.filter((position) => position.tableId !== tableId),
-      };
-      persistFloorPlan(nextPlan);
-      return nextPlan;
+  constructor(
+    private readonly menuItemsApi: MenuItemsService,
+    private readonly ordersApi: OrdersService,
+    private readonly tablesApi: TablesService,
+    private readonly floorPlanApi: FloorPlanService,
+    private readonly tenant: TenantService,
+    private readonly realtime: RealtimeService,
+  ) {
+    effect(() => {
+      const tenantId = this.tenant.activeRestaurantId();
+      if (!tenantId) {
+        this.resetState();
+        this.realtime.disconnect();
+        return;
+      }
+      void this.loadAll();
+      this.realtime.connect(tenantId);
+      this.realtime.clearHandlers();
+      this.registerRealtimeHandlers();
     });
   }
 
-  updateTableNumber(tableId: number, nextNumber: number): void {
-    const table = this.tables().find((item) => item.id === tableId);
+  async loadAll(): Promise<void> {
+    await this.loadTables();
+    await Promise.all([this.loadMenuItems(), this.loadOrders()]);
+    await this.loadFloorPlan();
+  }
+
+  async loadTables(): Promise<void> {
+    await this.ensureTenant();
+    const tables = await firstValueFrom(this.tablesApi.list());
+    this.tables.set(tables);
+  }
+
+  async loadMenuItems(): Promise<void> {
+    await this.ensureTenant();
+    const items = await firstValueFrom(this.menuItemsApi.list());
+    this.menuItems.set(items.map((item) => this.normalizeMenuItem(item)));
+  }
+
+  async loadOrders(): Promise<void> {
+    await this.ensureTenant();
+    const orders = await firstValueFrom(this.ordersApi.list());
+    this.orders.set(orders.map((order) => this.normalizeOrder(order)));
+  }
+
+  async loadFloorPlan(): Promise<void> {
+    await this.ensureTenant();
+    try {
+      const plan = await firstValueFrom(this.floorPlanApi.get());
+      this.floorPlan.set(plan);
+    } catch {
+      const fallback = createDefaultFloorPlan(this.tables());
+      const plan = await firstValueFrom(this.floorPlanApi.update(fallback));
+      this.floorPlan.set(plan);
+    }
+  }
+
+  async setTableStatus(tableId: string, status: TableStatus, orderId?: string): Promise<void> {
+    await this.ensureTenant();
+    const table = this.tables().find((t) => t.id === tableId);
     if (!table) {
       return;
     }
-    const prevNumber = table.number;
-    this.tables.update((tables) =>
-      tables.map((item) => (item.id === tableId ? { ...item, number: nextNumber } : item)),
+    const next = await firstValueFrom(
+      this.tablesApi.update(tableId, {
+        status,
+        currentOrderId:
+          status === 'free' || status === 'served' ? null : orderId ?? table.currentOrderId ?? null,
+        paymentStatus: status === 'free' ? 'unpaid' : table.paymentStatus,
+      }),
     );
-    this.orders.update((orders) =>
-      orders.map((order) =>
-        order.tableNumber === prevNumber ? { ...order, tableNumber: nextNumber } : order,
-      ),
-    );
+    this.tables.update((tables) => tables.map((t) => (t.id === tableId ? next : t)));
   }
 
-  addMenuItem(item: Omit<MenuItem, 'id'>): void {
-    this.menuItems.update((items) => [...items, { ...item, id: crypto.randomUUID() }]);
+  async setTablePaymentTiming(tableId: string, timing: PaymentTiming): Promise<void> {
+    await this.ensureTenant();
+    const next = await firstValueFrom(this.tablesApi.update(tableId, { paymentTiming: timing }));
+    this.tables.update((tables) => tables.map((t) => (t.id === tableId ? next : t)));
   }
 
-  updateMenuItem(item: MenuItem): void {
-    this.menuItems.update((items) => items.map((m) => (m.id === item.id ? item : m)));
+  async setTablePaymentStatus(tableId: string, status: PaymentStatus): Promise<void> {
+    await this.ensureTenant();
+    const next = await firstValueFrom(this.tablesApi.update(tableId, { paymentStatus: status }));
+    this.tables.update((tables) => tables.map((t) => (t.id === tableId ? next : t)));
   }
 
-  deleteMenuItem(id: string): void {
-    this.menuItems.update((items) => items.filter((m) => m.id !== id));
+  async setFloorPlan(plan: FloorPlan): Promise<void> {
+    await this.ensureTenant();
+    const next = await firstValueFrom(this.floorPlanApi.update(plan));
+    this.floorPlan.set(next);
   }
 
-  submitOrder(tableNumber: number, items: OrderItem[]): void {
-    const total = items.reduce((sum, item) => sum + item.menuItem.price * item.quantity, 0);
-    const table = this.tables().find((t) => t.number === tableNumber);
-    const paymentTiming: PaymentTiming = table?.paymentTiming ?? 'end';
-    const paid = paymentTiming === 'start';
-    const order: Order = {
-      id: crypto.randomUUID(),
-      tableNumber,
-      items,
-      status: 'pending',
-      createdAt: new Date(),
-      total,
-      paymentTiming,
-      paid,
-    };
-    this.orders.update((orders) => [order, ...orders]);
-    this.tables.update((tables) =>
-      tables.map((table) =>
-        table.number === tableNumber
-          ? {
-              ...table,
-              status: 'ordered',
-              currentOrderId: order.id,
-              paymentStatus: paid ? 'paid' : 'unpaid',
-            }
-          : table,
-      ),
-    );
-    this.refreshTablePaymentStatus(tableNumber);
+  async addTable(): Promise<RestaurantTable | null> {
+    await this.ensureTenant();
+    const tables = this.tables();
+    const nextNumber = tables.length ? Math.max(...tables.map((table) => table.number)) + 1 : 1;
+    const created = await firstValueFrom(this.tablesApi.create({ number: nextNumber }));
+    this.tables.update((items) => [...items, created]);
+    return created;
   }
 
-  markOrderReady(orderId: string): void {
-    this.orders.update((orders) =>
-      orders.map((order) => (order.id === orderId ? { ...order, status: 'ready' } : order)),
-    );
+  async deleteTable(tableId: string): Promise<void> {
+    await this.ensureTenant();
+    await firstValueFrom(this.tablesApi.remove(tableId));
+    this.tables.update((tables) => tables.filter((table) => table.id !== tableId));
+    this.floorPlan.update((plan) => ({
+      ...plan,
+      positions: plan.positions.filter((position) => position.tableId !== tableId),
+    }));
   }
 
-  markOrderPending(orderId: string): void {
-    this.orders.update((orders) =>
-      orders.map((order) => (order.id === orderId ? { ...order, status: 'pending' } : order)),
-    );
-  }
-
-  markOrderServed(orderId: string): void {
-    const order = this.orders().find((o) => o.id === orderId);
-    this.orders.update((orders) =>
-      orders.map((o) => (o.id === orderId ? { ...o, status: 'served' } : o)),
-    );
-    if (order) {
-      this.tables.update((tables) =>
-        tables.map((table) =>
-          table.number === order.tableNumber
-            ? { ...table, status: 'served', currentOrderId: undefined }
-            : table,
+  async updateTableNumber(tableId: string, nextNumber: number): Promise<void> {
+    await this.ensureTenant();
+    const updated = await firstValueFrom(this.tablesApi.update(tableId, { number: nextNumber }));
+    const table = this.tables().find((item) => item.id === tableId);
+    const prevNumber = table?.number;
+    this.tables.update((tables) => tables.map((item) => (item.id === tableId ? updated : item)));
+    if (prevNumber) {
+      this.orders.update((orders) =>
+        orders.map((order) =>
+          order.tableNumber === prevNumber ? { ...order, tableNumber: nextNumber } : order,
         ),
       );
     }
   }
 
-  cancelOrder(orderId: string): void {
-    const order = this.orders().find((o) => o.id === orderId);
-    this.orders.update((orders) =>
-      orders.map((o) => (o.id === orderId ? { ...o, status: 'canceled' } : o)),
-    );
-    if (order) {
-      this.refreshTablePaymentStatus(order.tableNumber);
-      this.refreshTableStatus(order.tableNumber);
-    }
+  async addMenuItem(item: Omit<MenuItem, 'id'>): Promise<void> {
+    await this.ensureTenant();
+    const created = await firstValueFrom(this.menuItemsApi.create(item));
+    this.menuItems.update((items) => [...items, this.normalizeMenuItem(created)]);
   }
 
-  markOrderPaid(orderId: string): void {
-    const order = this.orders().find((o) => o.id === orderId);
-    if (!order) {
-      return;
-    }
-    this.orders.update((orders) =>
-      orders.map((o) => (o.id === orderId ? { ...o, paid: true } : o)),
+  async updateMenuItem(item: MenuItem): Promise<void> {
+    await this.ensureTenant();
+    const updated = await firstValueFrom(
+      this.menuItemsApi.update(item.id, {
+        name: item.name,
+        category: item.category,
+        price: item.price,
+        isAvailable: item.isAvailable,
+      }),
     );
-    this.refreshTablePaymentStatus(order.tableNumber);
+    this.menuItems.update((items) =>
+      items.map((m) => (m.id === item.id ? this.normalizeMenuItem(updated) : m)),
+    );
   }
 
-  markOrdersPaidForTable(tableNumber: number): void {
-    this.orders.update((orders) =>
-      orders.map((o) =>
-        o.tableNumber === tableNumber && o.status !== 'canceled' ? { ...o, paid: true } : o,
-      ),
+  async deleteMenuItem(id: string): Promise<void> {
+    await this.ensureTenant();
+    await firstValueFrom(this.menuItemsApi.remove(id));
+    this.menuItems.update((items) => items.filter((m) => m.id !== id));
+  }
+
+  async submitOrder(tableNumber: number, items: OrderItem[]): Promise<void> {
+    await this.ensureTenant();
+    const payloadItems = items.map((item) => ({
+      menuItemId: item.menuItemId,
+      quantity: item.quantity,
+    }));
+    const order = await firstValueFrom(
+      this.ordersApi.create({
+        tableNumber,
+        items: payloadItems,
+      }),
     );
-    this.refreshTablePaymentStatus(tableNumber);
+    this.orders.update((orders) => [this.normalizeOrder(order), ...orders]);
+    await this.loadTables();
+  }
+
+  async markOrderReady(orderId: string): Promise<void> {
+    await this.ensureTenant();
+    const order = await firstValueFrom(this.ordersApi.updateStatus(orderId, { status: 'ready' }));
+    this.replaceOrder(order);
+  }
+
+  async markOrderPending(orderId: string): Promise<void> {
+    await this.ensureTenant();
+    const order = await firstValueFrom(this.ordersApi.updateStatus(orderId, { status: 'pending' }));
+    this.replaceOrder(order);
+  }
+
+  async markOrderServed(orderId: string): Promise<void> {
+    await this.ensureTenant();
+    const order = await firstValueFrom(
+      this.ordersApi.updateStatus(orderId, { status: 'delivered' }),
+    );
+    this.replaceOrder(order);
+  }
+
+  async cancelOrder(orderId: string): Promise<void> {
+    await this.ensureTenant();
+    const order = await firstValueFrom(
+      this.ordersApi.updateStatus(orderId, { status: 'cancelled' }),
+    );
+    this.replaceOrder(order);
+    await this.refreshTablePaymentStatus(order.tableNumber);
+  }
+
+  async markOrderPaid(orderId: string): Promise<void> {
+    await this.ensureTenant();
+    const order = await firstValueFrom(this.ordersApi.updatePaid(orderId, { paid: true }));
+    this.replaceOrder(order);
+    await this.refreshTablePaymentStatus(order.tableNumber);
+  }
+
+  async markOrdersPaidForTable(tableNumber: number): Promise<void> {
+    const orders = this.orders().filter(
+      (o) => o.tableNumber === tableNumber && o.status !== 'cancelled',
+    );
+    for (const order of orders) {
+      if (!order.paid) {
+        await this.markOrderPaid(order.id);
+      }
+    }
   }
 
   canReleaseTable(tableNumber: number): boolean {
     return this.orders()
-      .filter((o) => o.tableNumber === tableNumber && o.status !== 'canceled')
+      .filter((o) => o.tableNumber === tableNumber && o.status !== 'cancelled')
       .every((o) => o.paid);
   }
 
-  releaseTable(tableId: number): void {
-    this.tables.update((tables) =>
-      tables.map((table) =>
-        table.id === tableId
-          ? {
-              ...table,
-              status: 'free',
-              currentOrderId: undefined,
-              paymentStatus: 'unpaid',
-              paymentTiming: 'end',
-            }
-          : table,
-      ),
+  async releaseTable(tableId: string): Promise<void> {
+    await this.ensureTenant();
+    const table = this.tables().find((t) => t.id === tableId);
+    if (!table) {
+      return;
+    }
+    const updated = await firstValueFrom(
+      this.tablesApi.update(tableId, {
+        status: 'free',
+        currentOrderId: null,
+        paymentStatus: 'unpaid',
+        paymentTiming: 'end',
+      }),
     );
+    this.tables.update((tables) => tables.map((t) => (t.id === tableId ? updated : t)));
   }
 
-  private refreshTablePaymentStatus(tableNumber: number): void {
+  private async refreshTablePaymentStatus(tableNumber: number): Promise<void> {
+    const table = this.tables().find((t) => t.number === tableNumber);
+    if (!table) {
+      return;
+    }
     const tableOrders = this.orders().filter(
-      (o) => o.tableNumber === tableNumber && o.status !== 'canceled',
+      (o) => o.tableNumber === tableNumber && o.status !== 'cancelled',
     );
     const hasUnpaid = tableOrders.some((o) => !o.paid);
-    const nextStatus: PaymentStatus = tableOrders.length === 0 ? 'unpaid' : hasUnpaid ? 'unpaid' : 'paid';
-    this.tables.update((tables) =>
-      tables.map((table) =>
-        table.number === tableNumber
-          ? { ...table, paymentStatus: nextStatus }
-          : table,
-      ),
+    const nextStatus: PaymentStatus =
+      tableOrders.length === 0 ? 'unpaid' : hasUnpaid ? 'unpaid' : 'paid';
+    await this.setTablePaymentStatus(table.id, nextStatus);
+  }
+
+  private replaceOrder(order: Order): void {
+    const normalized = this.normalizeOrder(order);
+    this.orders.update((orders) =>
+      orders.map((o) => (o.id === normalized.id ? normalized : o)),
     );
   }
 
-  private refreshTableStatus(tableNumber: number): void {
-    const tableOrders = this.orders().filter(
-      (o) => o.tableNumber === tableNumber && o.status !== 'canceled',
-    );
-    if (tableOrders.some((o) => o.status === 'pending' || o.status === 'preparing' || o.status === 'ready')) {
-      this.tables.update((tables) =>
-        tables.map((table) =>
-          table.number === tableNumber ? { ...table, status: 'ordered' } : table,
-        ),
-      );
-      return;
+  private normalizeMenuItem(item: MenuItem): MenuItem {
+    return {
+      ...item,
+      price: Number(item.price),
+    };
+  }
+
+  private normalizeOrder(order: Order): Order {
+    return {
+      ...order,
+      total: Number(order.total),
+      items: order.items.map((item) => ({
+        ...item,
+        menuItemId: item.menuItemId ?? item.menuItem?.id ?? '',
+        unitPrice: Number(item.unitPrice),
+        menuItem: item.menuItem ? this.normalizeMenuItem(item.menuItem) : item.menuItem,
+      })),
+    };
+  }
+
+  private resetState(): void {
+    this.tables.set([]);
+    this.menuItems.set([]);
+    this.orders.set([]);
+    this.floorPlan.set(createDefaultFloorPlan([]));
+  }
+
+  private async ensureTenant(): Promise<string> {
+    const tenantId = this.tenant.activeRestaurantId();
+    if (!tenantId) {
+      throw new Error('Missing active restaurant');
     }
-    if (tableOrders.some((o) => o.status === 'served')) {
-      this.tables.update((tables) =>
-        tables.map((table) =>
-          table.number === tableNumber ? { ...table, status: 'served' } : table,
-        ),
-      );
-      return;
-    }
-    this.tables.update((tables) =>
-      tables.map((table) =>
-        table.number === tableNumber && table.status !== 'free'
-          ? { ...table, status: 'seated', currentOrderId: undefined }
-          : table,
-      ),
-    );
+    return tenantId;
+  }
+
+  private registerRealtimeHandlers(): void {
+    this.realtime.on('order.created', () => {
+      void this.loadOrders();
+      void this.loadTables();
+    });
+    this.realtime.on('order.updated', () => {
+      void this.loadOrders();
+      void this.loadTables();
+    });
+    this.realtime.on('order.deleted', () => {
+      void this.loadOrders();
+      void this.loadTables();
+    });
+    this.realtime.on('menu-item.created', () => {
+      void this.loadMenuItems();
+    });
+    this.realtime.on('menu-item.updated', () => {
+      void this.loadMenuItems();
+    });
+    this.realtime.on('menu-item.deleted', () => {
+      void this.loadMenuItems();
+    });
+    this.realtime.on('table.created', () => {
+      void this.loadTables();
+    });
+    this.realtime.on('table.updated', () => {
+      void this.loadTables();
+    });
+    this.realtime.on('table.deleted', () => {
+      void this.loadTables();
+      void this.loadFloorPlan();
+    });
+    this.realtime.on('floor-plan.updated', () => {
+      void this.loadFloorPlan();
+    });
   }
 }

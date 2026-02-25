@@ -68,7 +68,7 @@ import { ToastService } from '../ui/toast.service';
               Items: {{ order.items.length }}
             </div>
             <button
-              *ngIf="!order.paid && order.status !== 'canceled'"
+              *ngIf="!order.paid && order.status !== 'cancelled'"
               (click)="payOrder(order.id)"
               class="touch-target rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-success-foreground hover:opacity-90"
             >
@@ -119,22 +119,28 @@ export class OrderHistoryPageComponent {
     this.router.navigate([], { queryParams: { table: null }, queryParamsHandling: 'merge' });
   }
 
-  payOrder(orderId: string): void {
-    this.store.markOrderPaid(orderId);
-    this.toast.success('Orden pagada');
+  async payOrder(orderId: string): Promise<void> {
+    try {
+      await this.store.markOrderPaid(orderId);
+      this.toast.success('Orden pagada');
+    } catch {
+      this.toast.error('No se pudo marcar como pagada');
+    }
   }
 
   orderStatusLabel(status: string): string {
     switch (status) {
       case 'pending':
         return 'Pendiente';
+      case 'accepted':
+        return 'Aceptada';
       case 'preparing':
         return 'Preparando';
       case 'ready':
         return 'Lista';
-      case 'served':
-        return 'Servida';
-      case 'canceled':
+      case 'delivered':
+        return 'Entregada';
+      case 'cancelled':
         return 'Cancelada';
       default:
         return status;

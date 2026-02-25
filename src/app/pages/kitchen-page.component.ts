@@ -51,7 +51,7 @@ import { ToastService } from '../ui/toast.service';
               </div>
               <ul class="mb-4 space-y-1.5">
                 <li *ngFor="let item of order.items" class="flex justify-between text-sm">
-                  <span>{{ item.menuItem.name }}</span>
+                  <span>{{ item.menuItem?.name }}</span>
                   <span class="font-bold text-kitchen-foreground/70">x{{ item.quantity }}</span>
                 </li>
               </ul>
@@ -94,7 +94,7 @@ import { ToastService } from '../ui/toast.service';
                 <span class="rounded-full bg-success/20 px-3 py-1 text-xs font-medium text-success">Ready</span>
               </div>
               <ul class="mb-4 space-y-1 text-sm text-kitchen-foreground/70">
-                <li *ngFor="let item of order.items">{{ item.quantity }}x {{ item.menuItem.name }}</li>
+                <li *ngFor="let item of order.items">{{ item.quantity }}x {{ item.menuItem?.name }}</li>
               </ul>
               <div class="flex flex-col gap-2 sm:flex-row">
                 <button
@@ -119,7 +119,14 @@ import { ToastService } from '../ui/toast.service';
 })
 export class KitchenPageComponent {
   readonly pendingOrders = computed(() =>
-    this.store.orders().filter((order) => order.status === 'pending' || order.status === 'preparing'),
+    this.store
+      .orders()
+      .filter(
+        (order) =>
+          order.status === 'pending' ||
+          order.status === 'accepted' ||
+          order.status === 'preparing',
+      ),
   );
 
   readonly readyOrders = computed(() => this.store.orders().filter((order) => order.status === 'ready'));
@@ -135,35 +142,51 @@ export class KitchenPageComponent {
 
   constructor(private readonly store: StoreService, private readonly toast: ToastService) {}
 
-  markReady(orderId: string, tableNumber: number): void {
-    this.store.markOrderReady(orderId);
-    this.toast.success(`Table ${tableNumber} order is ready!`);
-    this.startUndoTimer(orderId, 'ready');
+  async markReady(orderId: string, tableNumber: number): Promise<void> {
+    try {
+      await this.store.markOrderReady(orderId);
+      this.toast.success(`Table ${tableNumber} order is ready!`);
+      this.startUndoTimer(orderId, 'ready');
+    } catch {
+      this.toast.error('No se pudo actualizar la orden');
+    }
   }
 
-  markServed(orderId: string): void {
-    this.store.markOrderServed(orderId);
-    this.toast.success('Order marked as served');
+  async markServed(orderId: string): Promise<void> {
+    try {
+      await this.store.markOrderServed(orderId);
+      this.toast.success('Order marked as served');
+    } catch {
+      this.toast.error('No se pudo actualizar la orden');
+    }
   }
 
-  cancelOrder(orderId: string, tableNumber: number): void {
+  async cancelOrder(orderId: string, tableNumber: number): Promise<void> {
     if (!window.confirm('Cancelar esta orden?')) {
       return;
     }
-    this.store.cancelOrder(orderId);
-    this.toast.success(`Order for Table ${tableNumber} canceled`);
-    this.startUndoTimer(orderId, 'cancel');
+    try {
+      await this.store.cancelOrder(orderId);
+      this.toast.success(`Order for Table ${tableNumber} canceled`);
+      this.startUndoTimer(orderId, 'cancel');
+    } catch {
+      this.toast.error('No se pudo cancelar la orden');
+    }
   }
 
-  undoReady(orderId: string): void {
+  async undoReady(orderId: string): Promise<void> {
     if (!this.confirmUndo()) {
       return;
     }
-    this.store.markOrderPending(orderId);
-    this.toast.success('Order moved back to incoming');
+    try {
+      await this.store.markOrderPending(orderId);
+      this.toast.success('Order moved back to incoming');
+    } catch {
+      this.toast.error('No se pudo actualizar la orden');
+    }
   }
 
-  undoFromSnackbar(): void {
+  async undoFromSnackbar(): Promise<void> {
     const action = this.undoAction();
     if (!action) {
       return;
@@ -171,13 +194,18 @@ export class KitchenPageComponent {
     if (!this.confirmUndo()) {
       return;
     }
-    this.store.markOrderPending(action.id);
-    this.toast.success('Order moved back to incoming');
-    this.clearUndoTimer();
+    try {
+      await this.store.markOrderPending(action.id);
+      this.toast.success('Order moved back to incoming');
+      this.clearUndoTimer();
+    } catch {
+      this.toast.error('No se pudo actualizar la orden');
+    }
   }
 
-  formatDistanceToNow(date: Date): string {
-    const diffSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+  formatDistanceToNow(date: string): string {
+    const parsed = new Date(date);
+    const diffSeconds = Math.round((parsed.getTime() - Date.now()) / 1000);
     const absSeconds = Math.abs(diffSeconds);
     const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 

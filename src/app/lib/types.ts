@@ -3,7 +3,7 @@ export type PaymentStatus = 'unpaid' | 'paid';
 export type PaymentTiming = 'start' | 'end';
 
 export interface RestaurantTable {
-  id: number;
+  id: string;
   number: number;
   status: TableStatus;
   paymentStatus: PaymentStatus;
@@ -12,7 +12,7 @@ export interface RestaurantTable {
 }
 
 export interface TablePosition {
-  tableId: number;
+  tableId: string;
   floor: number;
   x: number;
   y: number;
@@ -41,23 +41,41 @@ export interface FloorPlan {
 export interface MenuItem {
   id: string;
   name: string;
-  price: number;
   category: string;
+  price: number;
+  isAvailable?: boolean;
+}
+
+export interface Restaurant {
+  id: string;
+  name: string;
+  slug: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface OrderItem {
-  menuItem: MenuItem;
+  menuItemId: string;
   quantity: number;
+  unitPrice: number;
+  menuItem?: MenuItem;
 }
 
-export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'served' | 'canceled';
+export type OrderStatus =
+  | 'pending'
+  | 'accepted'
+  | 'preparing'
+  | 'ready'
+  | 'delivered'
+  | 'cancelled';
 
 export interface Order {
   id: string;
   tableNumber: number;
   items: OrderItem[];
   status: OrderStatus;
-  createdAt: Date;
+  createdAt: string;
   total: number;
   paymentTiming: PaymentTiming;
   paid: boolean;

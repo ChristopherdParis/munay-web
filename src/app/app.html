@@ -5,7 +5,19 @@
         <app-icon class="h-6 w-6 text-primary" name="clipboard-list"></app-icon>
         <span class="text-lg font-bold text-foreground">OrderFlow</span>
       </div>
-      <nav class="flex gap-1">
+      <div class="flex items-center gap-3">
+        <div class="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
+          <ng-container *ngIf="tenant.activeRestaurantId(); else noTenant">
+            <span class="text-muted-foreground">Negocio:</span>
+            <span class="font-semibold text-foreground">
+              {{ tenant.activeRestaurantName() ?? 'Sin nombre' }}
+            </span>
+          </ng-container>
+          <ng-template #noTenant>
+            <span class="text-warning">Selecciona un negocio</span>
+          </ng-template>
+        </div>
+        <nav class="flex gap-1">
         <a
           *ngFor="let item of navItems"
           [routerLink]="item.to"
@@ -22,7 +34,8 @@
           <app-icon class="h-4 w-4" [name]="item.icon"></app-icon>
           <span class="hidden sm:inline">{{ item.label }}</span>
         </a>
-      </nav>
+        </nav>
+      </div>
     </div>
   </header>
   <main class="flex-1">

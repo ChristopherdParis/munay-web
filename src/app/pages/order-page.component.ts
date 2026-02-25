@@ -72,14 +72,14 @@ import { ToastService } from '../ui/toast.service';
               class="flex items-center gap-3 rounded-lg border bg-card p-3"
             >
               <div class="flex-1">
-                <div class="text-sm font-medium text-card-foreground">{{ item.menuItem.name }}</div>
+                <div class="text-sm font-medium text-card-foreground">{{ item.menuItem?.name }}</div>
                 <div class="text-xs text-muted-foreground">
-                  \${{ (item.menuItem.price * item.quantity).toFixed(2) }}
+                  \${{ ((item.menuItem?.price ?? item.unitPrice) * item.quantity).toFixed(2) }}
                 </div>
               </div>
               <div class="flex items-center gap-2">
                 <button
-                  (click)="updateQty(item.menuItem.id, -1)"
+                  (click)="updateQty(item.menuItemId, -1)"
                   class="touch-target flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-secondary-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
                 >
                   <app-icon *ngIf="item.quantity === 1" class="h-3.5 w-3.5" name="trash-2"></app-icon>
@@ -87,7 +87,7 @@ import { ToastService } from '../ui/toast.service';
                 </button>
                 <span class="w-6 text-center text-sm font-bold">{{ item.quantity }}</span>
                 <button
-                  (click)="updateQty(item.menuItem.id, 1)"
+                  (click)="updateQty(item.menuItemId, 1)"
                   class="touch-target flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
                 >
                   <app-icon class="h-3.5 w-3.5" name="plus"></app-icon>
@@ -113,7 +113,7 @@ import { ToastService } from '../ui/toast.service';
               </div>
                 <div class="mt-2 space-y-1">
                   <div *ngFor="let item of order.items" class="flex items-center justify-between">
-                    <span class="text-xs text-muted-foreground">{{ item.menuItem.name }}</span>
+                    <span class="text-xs text-muted-foreground">{{ item.menuItem?.name }}</span>
                     <span class="text-xs font-semibold text-card-foreground">x{{ item.quantity }}</span>
                   </div>
                 </div>
@@ -129,7 +129,7 @@ import { ToastService } from '../ui/toast.service';
                     Cancelar orden
                   </button>
                   <button
-                    *ngIf="!order.paid && order.status !== 'canceled'"
+                    *ngIf="!order.paid && order.status !== 'cancelled'"
                     (click)="payOrder(order.id)"
                     class="flex-1 rounded-lg bg-success px-3 py-2 text-xs font-semibold text-success-foreground hover:opacity-90"
                   >
@@ -169,7 +169,7 @@ export class OrderPageComponent {
       .orders()
       .filter(
         (order) =>
-          order.tableNumber === table && order.status !== 'canceled' && order.status !== 'served',
+          order.tableNumber === table && order.status !== 'cancelled' && order.status !== 'delivered',
       );
     return candidates[0] ?? null;
   });
@@ -190,7 +190,10 @@ export class OrderPageComponent {
   });
 
   readonly total = computed(() =>
-    this.orderItems().reduce((sum, item) => sum + item.menuItem.price * item.quantity, 0),
+    this.orderItems().reduce(
+      (sum, item) => sum + (item.menuItem?.price ?? item.unitPrice) * item.quantity,
+      0,
+    ),
   );
 
   readonly openOrders = computed(() => {
@@ -202,7 +205,9 @@ export class OrderPageComponent {
       .orders()
       .filter(
         (order) =>
-          order.tableNumber === table && order.status !== 'canceled' && order.status !== 'served',
+          order.tableNumber === table &&
+          order.status !== 'cancelled' &&
+          order.status !== 'delivered',
       );
   });
 
@@ -226,13 +231,16 @@ export class OrderPageComponent {
 
   addItem(menuItem: MenuItem): void {
     this.orderItems.update((items) => {
-      const existing = items.find((item) => item.menuItem.id === menuItem.id);
+      const existing = items.find((item) => item.menuItemId === menuItem.id);
       if (existing) {
         return items.map((item) =>
-          item.menuItem.id === menuItem.id ? { ...item, quantity: item.quantity + 1 } : item,
+          item.menuItemId === menuItem.id ? { ...item, quantity: item.quantity + 1 } : item,
         );
       }
-      return [...items, { menuItem, quantity: 1 }];
+      return [
+        ...items,
+        { menuItemId: menuItem.id, quantity: 1, unitPrice: menuItem.price, menuItem },
+      ];
     });
   }
 
@@ -240,7 +248,7 @@ export class OrderPageComponent {
     this.orderItems.update((items) =>
       items
         .map((item) =>
-          item.menuItem.id === id
+          item.menuItemId === id
             ? { ...item, quantity: Math.max(0, item.quantity + delta) }
             : item,
         )
@@ -248,39 +256,53 @@ export class OrderPageComponent {
     );
   }
 
-  handleSubmit(): void {
+  async handleSubmit(): Promise<void> {
     if (this.orderItems().length === 0) {
       return;
     }
-    this.store.submitOrder(this.tableNumber(), this.orderItems());
-    this.toast.success(`Order sent to kitchen for Table ${this.tableNumber()}`);
-    this.router.navigate(['/']);
+    try {
+      await this.store.submitOrder(this.tableNumber(), this.orderItems());
+      this.toast.success(`Order sent to kitchen for Table ${this.tableNumber()}`);
+      this.router.navigate(['/']);
+    } catch {
+      this.toast.error('No se pudo enviar la orden');
+    }
   }
 
-  cancelOrder(orderId: string): void {
+  async cancelOrder(orderId: string): Promise<void> {
     if (!window.confirm('Cancelar esta orden?')) {
       return;
     }
-    this.store.cancelOrder(orderId);
-    this.toast.success('Orden cancelada');
+    try {
+      await this.store.cancelOrder(orderId);
+      this.toast.success('Orden cancelada');
+    } catch {
+      this.toast.error('No se pudo cancelar la orden');
+    }
   }
 
-  payOrder(orderId: string): void {
-    this.store.markOrderPaid(orderId);
-    this.toast.success('Orden pagada');
+  async payOrder(orderId: string): Promise<void> {
+    try {
+      await this.store.markOrderPaid(orderId);
+      this.toast.success('Orden pagada');
+    } catch {
+      this.toast.error('No se pudo marcar como pagada');
+    }
   }
 
   orderStatusLabel(status: string): string {
     switch (status) {
       case 'pending':
         return 'Pendiente';
+      case 'accepted':
+        return 'Aceptada';
       case 'preparing':
         return 'Preparando';
       case 'ready':
         return 'Lista';
-      case 'served':
-        return 'Servida';
-      case 'canceled':
+      case 'delivered':
+        return 'Entregada';
+      case 'cancelled':
         return 'Cancelada';
       default:
         return status;

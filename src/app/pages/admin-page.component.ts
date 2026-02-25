@@ -150,30 +150,33 @@ export class AdminPageComponent {
     this.form = { name: '', price: '', category: this.categories()[0] ?? '' };
   }
 
-  save(): void {
+  async save(): Promise<void> {
     if (!this.form.name || !this.form.price || !this.form.category) {
       this.toast.error('All fields are required');
       return;
     }
 
-    if (this.editing) {
-      this.store.updateMenuItem({
-        id: this.editing,
-        name: this.form.name,
-        price: parseFloat(this.form.price),
-        category: this.form.category,
-      });
-      this.toast.success('Item updated');
-    } else {
-      this.store.addMenuItem({
-        name: this.form.name,
-        price: parseFloat(this.form.price),
-        category: this.form.category,
-      });
-      this.toast.success('Item added');
+    try {
+      if (this.editing) {
+        await this.store.updateMenuItem({
+          id: this.editing,
+          name: this.form.name,
+          price: parseFloat(this.form.price),
+          category: this.form.category,
+        });
+        this.toast.success('Item updated');
+      } else {
+        await this.store.addMenuItem({
+          name: this.form.name,
+          price: parseFloat(this.form.price),
+          category: this.form.category,
+        });
+        this.toast.success('Item added');
+      }
+      this.cancel();
+    } catch {
+      this.toast.error('No se pudo guardar el item');
     }
-
-    this.cancel();
   }
 
   cancel(): void {
@@ -182,8 +185,12 @@ export class AdminPageComponent {
     this.form = { name: '', price: '', category: '' };
   }
 
-  handleDelete(id: string): void {
-    this.store.deleteMenuItem(id);
-    this.toast.success('Item deleted');
+  async handleDelete(id: string): Promise<void> {
+    try {
+      await this.store.deleteMenuItem(id);
+      this.toast.success('Item deleted');
+    } catch {
+      this.toast.error('No se pudo eliminar el item');
+    }
   }
 }
