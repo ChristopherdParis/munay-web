@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -166,6 +166,7 @@ export class OwnerRestaurantsComponent {
     private readonly restaurantsService: RestaurantsService,
     private readonly toast: ToastService,
     private readonly tenant: TenantService,
+    private readonly cdr: ChangeDetectorRef,
   ) {
     void this.load();
   }
@@ -177,11 +178,14 @@ export class OwnerRestaurantsComponent {
   async load(): Promise<void> {
     this.loading = true;
     try {
-      this.restaurants = await firstValueFrom(this.restaurantsService.list());
+      const result = await firstValueFrom(this.restaurantsService.list());
+      this.restaurants = Array.isArray(result) ? result : [];
     } catch {
       this.toast.error('No se pudieron cargar los negocios');
+      this.restaurants = [];
     } finally {
       this.loading = false;
+      this.cdr.markForCheck();
     }
   }
 

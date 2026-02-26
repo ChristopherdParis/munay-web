@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { OrdersService } from '../lib/orders.service';
@@ -74,6 +74,7 @@ export class OwnerRestaurantHistoryComponent {
     private readonly ordersService: OrdersService,
     private readonly tenant: TenantService,
     private readonly toast: ToastService,
+    private readonly cdr: ChangeDetectorRef,
   ) {
     void this.load();
   }
@@ -89,11 +90,14 @@ export class OwnerRestaurantHistoryComponent {
     try {
       this.restaurant = await firstValueFrom(this.restaurantsService.findOne(id));
       this.tenant.setActiveRestaurant(this.restaurant.id, this.restaurant.name);
-      this.orders = await firstValueFrom(this.ordersService.list());
+      const orders = await firstValueFrom(this.ordersService.list());
+      this.orders = Array.isArray(orders) ? orders : [];
     } catch {
       this.toast.error('No se pudo cargar el historial');
+      this.orders = [];
     } finally {
       this.loading = false;
+      this.cdr.markForCheck();
     }
   }
 
