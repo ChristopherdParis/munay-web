@@ -5,16 +5,27 @@ import { KitchenPageComponent } from './pages/kitchen-page.component';
 import { AdminPageComponent } from './pages/admin-page.component';
 import { OrderHistoryPageComponent } from './pages/order-history-page.component';
 import { NotFoundComponent } from './pages/not-found.component';
-import { RestaurantsPageComponent } from './pages/restaurants-page.component';
 import { RestaurantEntryPageComponent } from './pages/restaurant-entry-page.component';
+import { OwnerLayoutComponent } from './pages/owner-layout.component';
+import { OwnerDashboardComponent } from './pages/owner-dashboard.component';
+import { OwnerRestaurantsComponent } from './pages/owner-restaurants.component';
+import { OwnerRestaurantHistoryComponent } from './pages/owner-restaurant-history.component';
 
 export const routes: Routes = [
   { path: '', component: TablesPageComponent, pathMatch: 'full' },
   { path: 'order/:tableNumber', component: OrderPageComponent },
   { path: 'kitchen', component: KitchenPageComponent },
   { path: 'r/:slug', component: RestaurantEntryPageComponent },
-  { path: 'restaurants', component: RestaurantsPageComponent },
   { path: 'admin', component: AdminPageComponent },
   { path: 'history', component: OrderHistoryPageComponent },
+  {
+    path: 'owner',
+    component: OwnerLayoutComponent,
+    children: [
+      { path: '', component: OwnerDashboardComponent },
+      { path: 'restaurants', component: OwnerRestaurantsComponent },
+      { path: 'restaurants/:id/history', component: OwnerRestaurantHistoryComponent },
+    ],
+  },
   { path: '**', component: NotFoundComponent },
 ];

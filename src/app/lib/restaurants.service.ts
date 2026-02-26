@@ -25,6 +25,10 @@ export class RestaurantsService {
     return this.http.get<Restaurant[]>(`${this.baseUrl}/restaurants`);
   }
 
+  findOne(id: string): Observable<Restaurant> {
+    return this.http.get<Restaurant>(`${this.baseUrl}/restaurants/${id}`);
+  }
+
   getBySlug(slug: string): Observable<Restaurant> {
     return this.http.get<Restaurant>(`${this.baseUrl}/restaurants/slug/${slug}`);
   }
