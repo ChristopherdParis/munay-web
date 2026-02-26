@@ -12,8 +12,8 @@ import { ToastService } from './toast.service';
         *ngFor="let toast of toastService.toasts()"
         class="pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg transition-all"
         [ngClass]="{
-          'border-success/40 bg-success/15 text-success-foreground': toast.type === 'success',
-          'border-destructive/40 bg-destructive/15 text-destructive-foreground': toast.type === 'error',
+          'border-success/60 bg-success text-success-foreground': toast.type === 'success',
+          'border-destructive/60 bg-destructive text-destructive-foreground': toast.type === 'error',
           'border-border bg-card text-card-foreground': toast.type === 'info'
         }"
       >

@@ -97,6 +97,50 @@ import { ToastService } from '../ui/toast.service';
           </div>
         </div>
         <div class="border-t bg-card p-4">
+          <div class="mb-4 rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
+            <div class="flex items-center justify-between">
+              <span>Mesa {{ tableNumber() }}</span>
+              <span class="font-semibold text-foreground">{{ tableStatusLabel() }}</span>
+            </div>
+            <div class="mt-2 flex items-center justify-between">
+              <span>Pago</span>
+              <span class="font-semibold text-foreground">{{ paymentTimingLabel() }}</span>
+            </div>
+            <div class="mt-2 flex items-center justify-between">
+              <span>Ordenes abiertas</span>
+              <span class="font-semibold text-foreground">{{ openOrders().length }}</span>
+            </div>
+            <div class="mt-2 flex items-center justify-between">
+              <span>Pendientes de pago</span>
+              <span class="font-semibold text-foreground">{{ unpaidCount() }}</span>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button
+                (click)="togglePaymentTiming()"
+                class="rounded-lg border px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
+              >
+                Cambiar pago
+              </button>
+              <button
+                (click)="payAllForTable()"
+                class="rounded-lg bg-success px-3 py-2 text-xs font-semibold text-success-foreground hover:opacity-90"
+              >
+                Marcar pagadas
+              </button>
+              <button
+                (click)="releaseTable()"
+                [disabled]="!canReleaseTable()"
+                class="rounded-lg px-3 py-2 text-xs font-semibold"
+                [ngClass]="
+                  canReleaseTable()
+                    ? 'bg-success/15 text-success'
+                    : 'bg-muted/50 text-muted-foreground'
+                "
+              >
+                Liberar mesa
+              </button>
+            </div>
+          </div>
           <div *ngIf="openOrders().length !== 0" class="mb-3">
             <div class="mb-2 flex items-center justify-between text-xs font-semibold text-muted-foreground">
               <span>Ordenes abiertas</span>
@@ -211,6 +255,19 @@ export class OrderPageComponent {
       );
   });
 
+  readonly activeTable = computed(() => {
+    const tableNumber = this.tableNumber();
+    return this.store.tables().find((table) => table.number === tableNumber) ?? null;
+  });
+
+  readonly unpaidCount = computed(() => {
+    const table = this.tableNumber();
+    return this.store
+      .orders()
+      .filter((order) => order.tableNumber === table && order.status !== 'cancelled')
+      .filter((order) => !order.paid).length;
+  });
+
   constructor(
     private readonly route: ActivatedRoute,
     private readonly router: Router,
@@ -219,6 +276,80 @@ export class OrderPageComponent {
   ) {
     const tableNumberParam = Number(this.route.snapshot.paramMap.get('tableNumber'));
     this.tableNumber.set(Number.isNaN(tableNumberParam) ? 0 : tableNumberParam);
+  }
+
+  tableStatusLabel(): string {
+    const table = this.activeTable();
+    if (!table) {
+      return 'Sin estado';
+    }
+    switch (table.status) {
+      case 'free':
+        return 'Libre';
+      case 'seated':
+        return 'Sentados';
+      case 'ordered':
+        return 'Ordenado';
+      case 'served':
+        return 'Servido';
+      default:
+        return table.status;
+    }
+  }
+
+  paymentTimingLabel(): string {
+    const table = this.activeTable();
+    if (!table) {
+      return 'Pago al final';
+    }
+    return table.paymentTiming === 'start' ? 'Pago al inicio' : 'Pago al final';
+  }
+
+  async togglePaymentTiming(): Promise<void> {
+    const table = this.activeTable();
+    if (!table) {
+      return;
+    }
+    const next = table.paymentTiming === 'start' ? 'end' : 'start';
+    try {
+      await this.store.setTablePaymentTiming(table.id, next);
+    } catch {
+      this.toast.error('No se pudo actualizar el pago');
+    }
+  }
+
+  async payAllForTable(): Promise<void> {
+    try {
+      await this.store.markOrdersPaidForTable(this.tableNumber());
+      this.toast.success('Ordenes marcadas como pagadas');
+    } catch {
+      this.toast.error('No se pudieron marcar las ordenes');
+    }
+  }
+
+  canReleaseTable(): boolean {
+    return this.store.canReleaseTable(this.tableNumber());
+  }
+
+  async releaseTable(): Promise<void> {
+    const table = this.activeTable();
+    if (!table) {
+      return;
+    }
+    if (!this.canReleaseTable()) {
+      this.toast.error('Hay ordenes pendientes de pago');
+      return;
+    }
+    if (!window.confirm('Liberar esta mesa?')) {
+      return;
+    }
+    try {
+      await this.store.releaseTable(table.id);
+      this.toast.success('Mesa liberada');
+      this.router.navigate(['/']);
+    } catch {
+      this.toast.error('No se pudo liberar la mesa');
+    }
   }
 
   goBack(): void {
