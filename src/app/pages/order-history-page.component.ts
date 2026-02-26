@@ -137,9 +137,9 @@ export class OrderHistoryPageComponent {
       case 'preparing':
         return 'Preparando';
       case 'ready':
-        return 'Lista';
+        return 'Lista para servir';
       case 'delivered':
-        return 'Entregada';
+        return 'Servida';
       case 'cancelled':
         return 'Cancelada';
       default:

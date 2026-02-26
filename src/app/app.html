@@ -1,6 +1,6 @@
 <div class="flex min-h-screen flex-col">
   <ng-container *ngIf="!isOwnerRoute(); else ownerRoute">
-    <header class="sticky top-0 z-50 border-b bg-card px-4 py-3">
+    <header *ngIf="!isOrderRoute()" class="sticky top-0 z-50 border-b bg-card px-4 py-3">
       <div class="container flex items-center justify-between">
         <div class="flex items-center gap-2">
           <app-icon class="h-6 w-6 text-primary" name="clipboard-list"></app-icon>

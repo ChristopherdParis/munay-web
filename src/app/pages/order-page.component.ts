@@ -11,9 +11,9 @@ import { ToastService } from '../ui/toast.service';
   standalone: true,
   imports: [CommonModule, IconComponent],
   template: `
-    <div class="flex min-h-[calc(100vh-57px)] flex-col lg:flex-row">
+    <div class="flex min-h-screen flex-col lg:flex-row">
       <div class="flex-1 border-b lg:border-b-0 lg:border-r">
-        <div class="sticky top-[57px] z-10 border-b bg-card px-4 py-3">
+        <div class="sticky top-0 z-10 border-b bg-card px-4 py-3">
           <div class="flex items-center gap-3">
             <button
               (click)="goBack()"
@@ -52,6 +52,112 @@ import { ToastService } from '../ui/toast.service';
               <app-icon class="h-4 w-4" name="plus"></app-icon>
             </div>
           </button>
+        </div>
+        <div class="border-t bg-muted/10 px-4 py-4">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-foreground">Mesa y ordenes</h3>
+            <span class="text-xs text-muted-foreground">Table {{ tableNumber() }}</span>
+          </div>
+          <div class="grid gap-3 lg:grid-cols-2">
+            <div class="rounded-lg border bg-card p-3 text-xs text-muted-foreground">
+              <div class="flex items-center justify-between">
+                <span>Mesa {{ tableNumber() }}</span>
+                <span class="font-semibold text-foreground">{{ tableStatusLabel() }}</span>
+              </div>
+              <div class="mt-2 flex items-center justify-between">
+                <span>Pago</span>
+                <span class="font-semibold text-foreground">{{ paymentTimingLabel() }}</span>
+              </div>
+              <div class="mt-2 flex items-center justify-between">
+                <span>Ordenes abiertas</span>
+                <span class="font-semibold text-foreground">{{ openOrders().length }}</span>
+              </div>
+              <div class="mt-2 flex items-center justify-between">
+                <span>Pendientes de pago</span>
+                <span class="font-semibold text-foreground">{{ unpaidCount() }}</span>
+              </div>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button
+                  (click)="togglePaymentTiming()"
+                  class="rounded-lg border px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  Cambiar pago
+                </button>
+                <button
+                  (click)="payAllForTable()"
+                  class="rounded-lg bg-success px-3 py-2 text-xs font-semibold text-success-foreground hover:opacity-90"
+                >
+                  Marcar pagadas
+                </button>
+                <button
+                  (click)="releaseTable()"
+                  [disabled]="!canReleaseTable()"
+                  class="rounded-lg px-3 py-2 text-xs font-semibold"
+                  [ngClass]="
+                    canReleaseTable()
+                      ? 'bg-success/15 text-success'
+                      : 'bg-muted/50 text-muted-foreground'
+                  "
+                >
+                  Liberar mesa
+                </button>
+              </div>
+            </div>
+            <div class="rounded-lg border bg-card p-3 text-xs text-muted-foreground">
+              <div class="mb-2 flex items-center justify-between">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Ordenes abiertas
+                </span>
+                <span class="text-xs font-semibold text-foreground">{{ openOrders().length }}</span>
+              </div>
+              <p *ngIf="openOrders().length === 0" class="py-6 text-center text-xs text-muted-foreground">
+                No hay ordenes abiertas
+              </p>
+              <div *ngIf="openOrders().length !== 0" class="space-y-2">
+                <div
+                  *ngFor="let order of openOrders()"
+                  class="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Orden {{ order.id.slice(0, 6) }}</span>
+                    <span>{{ orderStatusLabel(order.status) }}</span>
+                  </div>
+                  <div class="mt-2 space-y-1">
+                    <div *ngFor="let item of order.items" class="flex items-center justify-between">
+                      <span class="text-xs text-muted-foreground">{{ item.menuItem?.name }}</span>
+                      <span class="text-xs font-semibold text-card-foreground">x{{ item.quantity }}</span>
+                    </div>
+                  </div>
+                  <div class="mt-2 flex items-center justify-between text-xs">
+                    <span>Total</span>
+                    <span class="font-semibold text-card-foreground">\${{ order.total.toFixed(2) }}</span>
+                  </div>
+                  <div class="mt-2 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+                    <button
+                      (click)="cancelOrder(order.id)"
+                      class="flex-1 rounded-lg border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10"
+                    >
+                      Cancelar orden
+                    </button>
+                    <button
+                      *ngIf="order.status === 'ready'"
+                      (click)="markServed(order.id)"
+                      class="flex-1 rounded-lg bg-success px-3 py-2 text-xs font-semibold text-success-foreground hover:opacity-90"
+                    >
+                      Marcar servida
+                    </button>
+                    <button
+                      *ngIf="!order.paid && order.status !== 'cancelled'"
+                      (click)="payOrder(order.id)"
+                      class="flex-1 rounded-lg bg-success px-3 py-2 text-xs font-semibold text-success-foreground hover:opacity-90"
+                    >
+                      Pagar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -97,92 +203,6 @@ import { ToastService } from '../ui/toast.service';
           </div>
         </div>
         <div class="border-t bg-card p-4">
-          <div class="mb-4 rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
-            <div class="flex items-center justify-between">
-              <span>Mesa {{ tableNumber() }}</span>
-              <span class="font-semibold text-foreground">{{ tableStatusLabel() }}</span>
-            </div>
-            <div class="mt-2 flex items-center justify-between">
-              <span>Pago</span>
-              <span class="font-semibold text-foreground">{{ paymentTimingLabel() }}</span>
-            </div>
-            <div class="mt-2 flex items-center justify-between">
-              <span>Ordenes abiertas</span>
-              <span class="font-semibold text-foreground">{{ openOrders().length }}</span>
-            </div>
-            <div class="mt-2 flex items-center justify-between">
-              <span>Pendientes de pago</span>
-              <span class="font-semibold text-foreground">{{ unpaidCount() }}</span>
-            </div>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <button
-                (click)="togglePaymentTiming()"
-                class="rounded-lg border px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
-              >
-                Cambiar pago
-              </button>
-              <button
-                (click)="payAllForTable()"
-                class="rounded-lg bg-success px-3 py-2 text-xs font-semibold text-success-foreground hover:opacity-90"
-              >
-                Marcar pagadas
-              </button>
-              <button
-                (click)="releaseTable()"
-                [disabled]="!canReleaseTable()"
-                class="rounded-lg px-3 py-2 text-xs font-semibold"
-                [ngClass]="
-                  canReleaseTable()
-                    ? 'bg-success/15 text-success'
-                    : 'bg-muted/50 text-muted-foreground'
-                "
-              >
-                Liberar mesa
-              </button>
-            </div>
-          </div>
-          <div *ngIf="openOrders().length !== 0" class="mb-3">
-            <div class="mb-2 flex items-center justify-between text-xs font-semibold text-muted-foreground">
-              <span>Ordenes abiertas</span>
-              <span>{{ openOrders().length }}</span>
-            </div>
-            <div class="space-y-2">
-            <div
-              *ngFor="let order of openOrders()"
-              class="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground"
-            >
-              <div class="flex items-center justify-between">
-                <span>Orden {{ order.id.slice(0, 6) }}</span>
-                <span>{{ orderStatusLabel(order.status) }}</span>
-              </div>
-                <div class="mt-2 space-y-1">
-                  <div *ngFor="let item of order.items" class="flex items-center justify-between">
-                    <span class="text-xs text-muted-foreground">{{ item.menuItem?.name }}</span>
-                    <span class="text-xs font-semibold text-card-foreground">x{{ item.quantity }}</span>
-                  </div>
-                </div>
-                <div class="mt-2 flex items-center justify-between text-xs">
-                  <span>Total</span>
-                  <span class="font-semibold text-card-foreground">\${{ order.total.toFixed(2) }}</span>
-                </div>
-                <div class="mt-2 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-                  <button
-                    (click)="cancelOrder(order.id)"
-                    class="flex-1 rounded-lg border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10"
-                  >
-                    Cancelar orden
-                  </button>
-                  <button
-                    *ngIf="!order.paid && order.status !== 'cancelled'"
-                    (click)="payOrder(order.id)"
-                    class="flex-1 rounded-lg bg-success px-3 py-2 text-xs font-semibold text-success-foreground hover:opacity-90"
-                  >
-                    Pagar
-                  </button>
-                </div>
-            </div>
-            </div>
-          </div>
           <div class="mb-3 flex justify-between text-lg font-bold">
             <span>Total</span>
             <span>\${{ total().toFixed(2) }}</span>
@@ -394,7 +414,7 @@ export class OrderPageComponent {
     try {
       await this.store.submitOrder(this.tableNumber(), this.orderItems());
       this.toast.success(`Order sent to kitchen for Table ${this.tableNumber()}`);
-      this.router.navigate(['/']);
+      this.orderItems.set([]);
     } catch {
       this.toast.error('No se pudo enviar la orden');
     }
@@ -421,6 +441,15 @@ export class OrderPageComponent {
     }
   }
 
+  async markServed(orderId: string): Promise<void> {
+    try {
+      await this.store.markOrderServed(orderId);
+      this.toast.success('Orden servida');
+    } catch {
+      this.toast.error('No se pudo actualizar la orden');
+    }
+  }
+
   orderStatusLabel(status: string): string {
     switch (status) {
       case 'pending':
@@ -430,9 +459,9 @@ export class OrderPageComponent {
       case 'preparing':
         return 'Preparando';
       case 'ready':
-        return 'Lista';
+        return 'Lista para servir';
       case 'delivered':
-        return 'Entregada';
+        return 'Servida';
       case 'cancelled':
         return 'Cancelada';
       default:

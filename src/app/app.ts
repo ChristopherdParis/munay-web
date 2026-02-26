@@ -21,12 +21,15 @@ export class App {
   ];
 
   readonly isOwnerRoute = signal(false);
+  readonly isOrderRoute = signal(false);
 
   constructor(readonly tenant: TenantService, router: Router) {
     this.isOwnerRoute.set(router.url.startsWith('/owner'));
+    this.isOrderRoute.set(router.url.startsWith('/order'));
     router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe((event) => {
       const url = (event as NavigationEnd).urlAfterRedirects;
       this.isOwnerRoute.set(url.startsWith('/owner'));
+      this.isOrderRoute.set(url.startsWith('/order'));
     });
   }
 }
