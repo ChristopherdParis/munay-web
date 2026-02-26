@@ -85,14 +85,9 @@ const PAYMENT_TIMING_LABEL: Record<PaymentTiming, string> = {
                 class="grid gap-2"
                 [ngStyle]="gridStyle(store.floorPlan())"
               >
-                <div
+              <div
                 *ngFor="let cell of gridCells(store.floorPlan().grid)"
-                class="rounded-lg border border-dashed border-border/80 bg-muted/50"
-                [ngClass]="
-                  cellIsBlocked(store.floorPlan(), cell.x, cell.y, activeFloor())
-                    ? 'bg-destructive/10 border-destructive/30'
-                    : 'bg-muted/50'
-                "
+                class="rounded-lg border border-dashed border-border/80 bg-slate-300/80"
               ></div>
               <div
                 *ngFor="let entry of tablesForActiveFloor()"
@@ -301,74 +296,6 @@ const PAYMENT_TIMING_LABEL: Record<PaymentTiming, string> = {
               <span class="text-xs text-muted-foreground">Filas</span>
             </div>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-sm font-medium text-muted-foreground">Celdas:</span>
-            <div class="flex items-center gap-1">
-              <input
-                type="number"
-                min="48"
-                max="120"
-                class="w-20 rounded-md border bg-card px-2 py-1 text-sm text-foreground"
-                [value]="draftPlan().cellSize"
-                (change)="setCellSize($event)"
-              />
-              <span class="text-xs text-muted-foreground">px</span>
-            </div>
-            <div class="flex items-center gap-1">
-              <input
-                type="number"
-                min="0.6"
-                max="1.6"
-                step="0.1"
-                class="w-20 rounded-md border bg-card px-2 py-1 text-sm text-foreground"
-                [value]="draftPlan().zoom"
-                (change)="setZoom($event)"
-              />
-              <span class="text-xs text-muted-foreground">Zoom</span>
-            </div>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-sm font-medium text-muted-foreground">Modo:</span>
-            <div class="inline-flex rounded-lg border bg-card p-1">
-              <button
-                class="touch-target rounded-md px-3 py-1 text-sm font-medium"
-                [ngClass]="layoutMode() === 'place' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'"
-                (click)="layoutMode.set('place')"
-              >
-                Ubicar mesas
-              </button>
-              <button
-                class="touch-target rounded-md px-3 py-1 text-sm font-medium"
-                [ngClass]="layoutMode() === 'shape' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'"
-                (click)="layoutMode.set('shape')"
-              >
-                Editar celdas
-              </button>
-            </div>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-sm font-medium text-muted-foreground">Plantillas:</span>
-            <div class="inline-flex flex-wrap rounded-lg border bg-card p-1">
-              <button
-                class="touch-target rounded-md px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
-                (click)="applyTemplate('rectangle')"
-              >
-                Rectangulo
-              </button>
-              <button
-                class="touch-target rounded-md px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
-                (click)="applyTemplate('l')"
-              >
-                Forma L
-              </button>
-              <button
-                class="touch-target rounded-md px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
-                (click)="applyTemplate('u')"
-              >
-                Forma U
-              </button>
-            </div>
-          </div>
         </div>
 
         <div class="grid gap-4 lg:grid-cols-[1fr,280px]">
@@ -382,14 +309,8 @@ const PAYMENT_TIMING_LABEL: Record<PaymentTiming, string> = {
               >
               <button
                 *ngFor="let cell of gridCells(draftPlan().grid)"
-                class="rounded-lg border border-dashed border-border/80 bg-muted/50 transition hover:border-primary/70"
-                [ngClass]="
-                  cellIsBlocked(draftPlan(), cell.x, cell.y, activeFloor())
-                    ? 'bg-destructive/10 border-destructive/30'
-                    : cellHasTable(cell.x, cell.y)
-                      ? 'bg-primary/10'
-                      : 'bg-muted/50'
-                "
+                class="rounded-lg border border-dashed border-border/80 transition hover:border-primary/70"
+                [ngClass]="cellHasTable(cell.x, cell.y) ? 'bg-primary/10' : 'bg-slate-300/80'"
                 (click)="handleCellClick(cell.x, cell.y)"
                 (dragover)="handleCellDragOver($event, cell.x, cell.y)"
                 (drop)="handleCellDrop($event, cell.x, cell.y)"
@@ -473,7 +394,6 @@ export class TablesPageComponent {
   readonly activeFloor = signal(1);
   readonly selectedTableId = signal<string | null>(null);
   readonly expandedTableId = signal<string | null>(null);
-  readonly layoutMode = signal<'place' | 'shape'>('place');
   readonly draftPlan = signal<FloorPlan>({
     floors: 1,
     grid: { columns: 1, rows: 1 },
@@ -709,21 +629,6 @@ export class TablesPageComponent {
     };
   }
 
-  setCellSize(event: Event): void {
-    const input = event.target as HTMLInputElement | null;
-    const raw = input ? Number(input.value) : Number.NaN;
-    const value = Number.isNaN(raw) ? 72 : Math.min(Math.max(raw, 48), 120);
-    const plan = this.draftPlan();
-    this.draftPlan.set({ ...plan, cellSize: value });
-  }
-
-  setZoom(event: Event): void {
-    const input = event.target as HTMLInputElement | null;
-    const raw = input ? Number(input.value) : Number.NaN;
-    const value = Number.isNaN(raw) ? 1 : Math.min(Math.max(raw, 0.6), 1.6);
-    const plan = this.draftPlan();
-    this.draftPlan.set({ ...plan, zoom: value });
-  }
 
   gridCells(grid: TableGrid): Array<{ x: number; y: number }> {
     return Array.from({ length: grid.columns * grid.rows }, (_, index) => ({
@@ -732,9 +637,6 @@ export class TablesPageComponent {
     }));
   }
 
-  cellIsBlocked(plan: FloorPlan, x: number, y: number, floor: number): boolean {
-    return plan.blocked.some((cell) => cell.floor === floor && cell.x === x && cell.y === y);
-  }
 
   tableStyle(position: TablePosition): Record<string, string> {
     return {
@@ -775,46 +677,11 @@ export class TablesPageComponent {
     this.draftPlan.set(sanitizePlan({ ...plan, grid }));
   }
 
-  applyTemplate(template: 'rectangle' | 'l' | 'u'): void {
-    const plan = this.draftPlan();
-    const grid = plan.grid;
-    const floor = this.activeFloor();
-    const blocked = plan.blocked.filter((cell) => cell.floor !== floor);
-    const next: Array<{ floor: number; x: number; y: number }> = [];
-
-    this.layoutMode.set('shape');
-    this.selectedTableId.set(null);
-
-    if (template === 'rectangle') {
-      this.draftPlan.set(sanitizePlan({ ...plan, blocked }));
-      this.toast.success('Plantilla aplicada');
-      return;
-    }
-
-    for (let y = 0; y < grid.rows; y += 1) {
-      for (let x = 0; x < grid.columns; x += 1) {
-        const isLeft = x === 0;
-        const isRight = x === grid.columns - 1;
-        const isBottom = y === grid.rows - 1;
-        const keep =
-          template === 'l'
-            ? isLeft || isBottom
-            : isLeft || isRight || isBottom;
-        if (!keep) {
-          next.push({ floor, x, y });
-        }
-      }
-    }
-
-    this.draftPlan.set(sanitizePlan({ ...plan, blocked: [...blocked, ...next] }));
-    this.toast.success('Plantilla aplicada');
-  }
 
   resetDraft(): void {
     this.draftPlan.set(clonePlan(this.store.floorPlan()));
     this.selectedTableId.set(null);
     this.activeFloor.set(1);
-    this.layoutMode.set('place');
   }
 
   async saveDraft(): Promise<void> {
@@ -836,14 +703,10 @@ export class TablesPageComponent {
 
   selectTable(tableId: string): void {
     this.selectedTableId.set(tableId);
-    this.layoutMode.set('place');
   }
 
   cellHasTable(x: number, y: number): boolean {
     const plan = this.draftPlan();
-    if (this.cellIsBlocked(plan, x, y, this.activeFloor())) {
-      return false;
-    }
     return Boolean(
       plan.positions.find(
         (pos) => pos.floor === this.activeFloor() && pos.x === x && pos.y === y,
@@ -854,13 +717,6 @@ export class TablesPageComponent {
   handleCellClick(x: number, y: number): void {
     const plan = this.draftPlan();
     const floor = this.activeFloor();
-    if (this.layoutMode() === 'shape') {
-      this.toggleBlockedCell(x, y);
-      return;
-    }
-    if (this.cellIsBlocked(plan, x, y, floor)) {
-      return;
-    }
     const selected = this.selectedTableId();
     const existing = plan.positions.find(
       (pos) => pos.floor === floor && pos.x === x && pos.y === y,
@@ -882,23 +738,13 @@ export class TablesPageComponent {
   handleTableDragStart(event: DragEvent, tableId: string): void {
     event.dataTransfer?.setData('text/plain', tableId);
     this.selectedTableId.set(tableId);
-    this.layoutMode.set('place');
   }
 
   handleCellDragOver(event: DragEvent, x: number, y: number): void {
-    if (this.layoutMode() !== 'place') {
-      return;
-    }
-    if (this.cellIsBlocked(this.draftPlan(), x, y, this.activeFloor())) {
-      return;
-    }
     event.preventDefault();
   }
 
   handleCellDrop(event: DragEvent, x: number, y: number): void {
-    if (this.layoutMode() !== 'place') {
-      return;
-    }
     event.preventDefault();
     const data = event.dataTransfer?.getData('text/plain');
     const tableId = data?.trim();
@@ -937,23 +783,10 @@ export class TablesPageComponent {
     }
   }
 
-  toggleBlockedCell(x: number, y: number): void {
-    const plan = this.draftPlan();
-    const floor = this.activeFloor();
-    const exists = this.cellIsBlocked(plan, x, y, floor);
-    const nextBlocked = exists
-      ? plan.blocked.filter((cell) => !(cell.floor === floor && cell.x === x && cell.y === y))
-      : [...plan.blocked, { floor, x, y }];
-    this.draftPlan.set(sanitizePlan({ ...plan, blocked: nextBlocked }));
-  }
-
   placeTableAt(tableId: string, x: number, y: number): void {
     const plan = this.draftPlan();
     const floor = this.activeFloor();
     if (!this.store.tables().some((table) => table.id === tableId)) {
-      return;
-    }
-    if (this.cellIsBlocked(plan, x, y, floor)) {
       return;
     }
     const existing = plan.positions.find(
