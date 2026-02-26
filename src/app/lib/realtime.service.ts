@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { signal } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
 import { getRealtimeUrl } from './api-config';
 
@@ -9,6 +10,7 @@ export class RealtimeService {
   private socket: Socket | null = null;
   private restaurantId: string | null = null;
   private handlers: Array<{ event: string; handler: EventHandler }> = [];
+  readonly connected = signal(false);
 
   connect(restaurantId: string): void {
     if (this.socket && this.restaurantId === restaurantId) {
@@ -20,6 +22,8 @@ export class RealtimeService {
       transports: ['websocket'],
       query: { restaurantId },
     });
+    this.socket.on('connect', () => this.connected.set(true));
+    this.socket.on('disconnect', () => this.connected.set(false));
   }
 
   on<T>(event: string, handler: (payload: T) => void): void {
@@ -49,5 +53,6 @@ export class RealtimeService {
     this.socket = null;
     this.restaurantId = null;
     this.handlers = [];
+    this.connected.set(false);
   }
 }

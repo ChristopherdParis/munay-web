@@ -47,6 +47,7 @@ export class StoreService {
   readonly orders = signal<Order[]>([]);
   readonly floorPlan = signal<FloorPlan>(createDefaultFloorPlan([]));
   readonly activeRestaurantId = computed(() => this.tenant.activeRestaurantId());
+  private pollTimer: number | null = null;
 
   constructor(
     private readonly menuItemsApi: MenuItemsService,
@@ -61,12 +62,27 @@ export class StoreService {
       if (!tenantId) {
         this.resetState();
         this.realtime.disconnect();
+        this.stopPolling();
         return;
       }
       void this.loadAll();
       this.realtime.connect(tenantId);
       this.realtime.clearHandlers();
       this.registerRealtimeHandlers();
+    });
+
+    effect(() => {
+      const tenantId = this.tenant.activeRestaurantId();
+      const connected = this.realtime.connected();
+      if (!tenantId) {
+        this.stopPolling();
+        return;
+      }
+      if (connected) {
+        this.stopPolling();
+      } else {
+        this.startPolling();
+      }
     });
   }
 
@@ -379,5 +395,23 @@ export class StoreService {
     this.realtime.on('floor-plan.updated', () => {
       void this.loadFloorPlan();
     });
+  }
+
+  private startPolling(): void {
+    if (this.pollTimer !== null) {
+      return;
+    }
+    this.pollTimer = window.setInterval(() => {
+      void this.loadOrders();
+      void this.loadTables();
+    }, 15000);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer === null) {
+      return;
+    }
+    window.clearInterval(this.pollTimer);
+    this.pollTimer = null;
   }
 }

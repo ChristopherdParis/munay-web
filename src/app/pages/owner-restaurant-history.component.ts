@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { OrdersService } from '../lib/orders.service';
@@ -11,14 +12,14 @@ import { ToastService } from '../ui/toast.service';
 @Component({
   selector: 'app-owner-restaurant-history',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="space-y-6">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Historial</p>
           <h1 class="text-2xl font-semibold text-white">{{ restaurant?.name ?? 'Negocio' }}</h1>
-          <p class="text-sm text-slate-400">Ordenes: {{ orders.length }}</p>
+          <p class="text-sm text-slate-400">Ordenes: {{ filteredOrders().length }}</p>
         </div>
         <button
           (click)="goBack()"
@@ -28,17 +29,51 @@ import { ToastService } from '../ui/toast.service';
         </button>
       </div>
 
+      <div class="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/40 p-4 md:grid-cols-3">
+        <div>
+          <label class="mb-1 block text-xs uppercase tracking-widest text-slate-400">Estado</label>
+          <select
+            [(ngModel)]="statusFilter"
+            class="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white"
+          >
+            <option value="">Todos</option>
+            <option value="pending">Pendiente</option>
+            <option value="accepted">Aceptada</option>
+            <option value="preparing">Preparando</option>
+            <option value="ready">Lista</option>
+            <option value="delivered">Entregada</option>
+            <option value="cancelled">Cancelada</option>
+          </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs uppercase tracking-widest text-slate-400">Desde</label>
+          <input
+            type="date"
+            [(ngModel)]="startDate"
+            class="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs uppercase tracking-widest text-slate-400">Hasta</label>
+          <input
+            type="date"
+            [(ngModel)]="endDate"
+            class="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white"
+          />
+        </div>
+      </div>
+
       <div *ngIf="loading" class="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
         Cargando historial...
       </div>
 
-      <div *ngIf="!loading && orders.length === 0" class="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
+      <div *ngIf="!loading && filteredOrders().length === 0" class="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
         Sin ordenes registradas.
       </div>
 
-      <div *ngIf="!loading && orders.length" class="space-y-3">
+      <div *ngIf="!loading && filteredOrders().length" class="space-y-3">
         <div
-          *ngFor="let order of orders"
+          *ngFor="let order of filteredOrders()"
           class="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -65,6 +100,9 @@ import { ToastService } from '../ui/toast.service';
 export class OwnerRestaurantHistoryComponent {
   restaurant: Restaurant | null = null;
   orders: Order[] = [];
+  statusFilter = '';
+  startDate = '';
+  endDate = '';
   loading = true;
 
   constructor(
@@ -103,6 +141,28 @@ export class OwnerRestaurantHistoryComponent {
 
   goBack(): void {
     this.router.navigate(['/owner/restaurants']);
+  }
+
+  filteredOrders(): Order[] {
+    const status = this.statusFilter;
+    const start = this.startDate ? new Date(this.startDate) : null;
+    const end = this.endDate ? new Date(this.endDate) : null;
+    if (end) {
+      end.setHours(23, 59, 59, 999);
+    }
+    return this.orders.filter((order) => {
+      if (status && order.status !== status) {
+        return false;
+      }
+      const created = new Date(order.createdAt);
+      if (start && created < start) {
+        return false;
+      }
+      if (end && created > end) {
+        return false;
+      }
+      return true;
+    });
   }
 
   orderStatusLabel(status: string): string {
